@@ -21,13 +21,22 @@ public:
     bool    is_recording() const;
     int64_t elapsed_ms()   const;
 
+    // Print available capture devices to stderr and return.
+    static void list_devices();
+
 private:
+    // Samples to discard after device start to let the device (and Bluetooth
+    // profile switch) settle before writing audio. 400 ms at 44100 Hz.
+    static constexpr unsigned int kWarmupSamples = 44100 * 4 / 10;
+
     // miniaudio objects stored on the heap to keep the header include-free.
     ma_device*  m_device  {nullptr};
     ma_encoder* m_encoder {nullptr};
 
-    std::atomic<bool>    m_recording {false};
-    std::atomic<int64_t> m_start_epoch_ms {0};
+    std::atomic<bool>     m_recording              {false};
+    std::atomic<int64_t>  m_start_epoch_ms          {0};
+    std::atomic<bool>     m_warmed_up               {false};
+    std::atomic<uint64_t> m_warmup_samples_discarded {0};
 
     // Called by miniaudio on each captured chunk.
     static void data_callback(ma_device*, void*, const void*, unsigned int);

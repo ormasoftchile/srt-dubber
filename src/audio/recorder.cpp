@@ -22,6 +22,22 @@ void AudioRecorder::data_callback(ma_device* device,
     if (!pInput || frameCount == 0)
         return;
 
+    // Discard early samples while the device (and Bluetooth profile) settles.
+    if (!self->m_warmed_up.load(std::memory_order_relaxed)) {
+        uint64_t discarded = self->m_warmup_samples_discarded.fetch_add(
+            frameCount, std::memory_order_relaxed) + frameCount;
+        if (discarded >= kWarmupSamples) {
+            self->m_warmed_up.store(true, std::memory_order_release);
+            // Start the visible timer only once warm-up is complete.
+            using namespace std::chrono;
+            self->m_start_epoch_ms.store(
+                duration_cast<milliseconds>(
+                    system_clock::now().time_since_epoch()).count(),
+                std::memory_order_relaxed);
+        }
+        return;
+    }
+
     ma_encoder_write_pcm_frames(self->m_encoder, pInput, frameCount, nullptr);
 }
 
@@ -50,6 +66,10 @@ bool AudioRecorder::start(const std::filesystem::path& output_wav)
     if (m_recording.load())
         return false;
 
+    // Reset warm-up state for each new recording.
+    m_warmed_up.store(false, std::memory_order_relaxed);
+    m_warmup_samples_discarded.store(0, std::memory_order_relaxed);
+
     // --- encoder ---
     ma_encoder_config enc_cfg = ma_encoder_config_init(
         ma_encoding_format_wav,
@@ -75,12 +95,24 @@ bool AudioRecorder::start(const std::filesystem::path& output_wav)
         return false;
     }
 
+    fprintf(stderr, "[audio] Recording device: %s\n", m_device->capture.name);
+
+    if (m_device->sampleRate != 44100) {
+        fprintf(stderr,
+            "[audio] Warning: device sample rate is %u Hz (requested 44100). "
+            "Audio quality may be reduced.\n",
+            m_device->sampleRate);
+    }
+
     if (ma_device_start(m_device) != MA_SUCCESS) {
         ma_device_uninit(m_device);
         ma_encoder_uninit(m_encoder);
         return false;
     }
 
+    // m_start_epoch_ms is set by the data callback once warm-up completes.
+    // Initialise to "now" as a safe fallback (elapsed_ms won't be called
+    // before warm-up in normal usage, but guard against it).
     using namespace std::chrono;
     m_start_epoch_ms.store(
         duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count()
@@ -125,4 +157,40 @@ int64_t AudioRecorder::elapsed_ms() const
     int64_t now = duration_cast<milliseconds>(
         system_clock::now().time_since_epoch()).count();
     return now - m_start_epoch_ms.load(std::memory_order_relaxed);
+}
+
+// ---------------------------------------------------------------------------
+// list_devices()
+// ---------------------------------------------------------------------------
+void AudioRecorder::list_devices()
+{
+    ma_context context;
+    if (ma_context_init(nullptr, 0, nullptr, &context) != MA_SUCCESS) {
+        fprintf(stderr, "[audio] Failed to initialise audio context.\n");
+        return;
+    }
+
+    ma_device_info* capture_devices   = nullptr;
+    ma_uint32       capture_count     = 0;
+    ma_device_info* playback_devices  = nullptr;
+    ma_uint32       playback_count    = 0;
+
+    if (ma_context_get_devices(&context,
+                               &playback_devices, &playback_count,
+                               &capture_devices,  &capture_count) != MA_SUCCESS)
+    {
+        fprintf(stderr, "[audio] Failed to enumerate devices.\n");
+        ma_context_uninit(&context);
+        return;
+    }
+
+    fprintf(stderr, "[audio] Capture devices (%u):\n", capture_count);
+    for (ma_uint32 i = 0; i < capture_count; ++i) {
+        fprintf(stderr, "  [%u] %s%s\n",
+                i,
+                capture_devices[i].name,
+                capture_devices[i].isDefault ? "  (default)" : "");
+    }
+
+    ma_context_uninit(&context);
 }

@@ -10,6 +10,13 @@
 
 ## Learnings
 
+### Session — Bluetooth warm-up fix & device diagnostics
+- **Root cause of "first part lost" + 1s glitch:** Bluetooth devices (AirPods Max) undergo an A2DP→HFP/SCO profile switch when a capture device is opened. This takes ~500–1000ms and delivers garbled/absent samples during the transition. Discarding the first 400ms of samples (17640 frames at 44100 Hz) eliminates both symptoms in one shot.
+- **Warm-up implementation:** Added `m_warmed_up` + `m_warmup_samples_discarded` atomics. The `data_callback` counts discarded frames; once ≥ `kWarmupSamples` (= `44100 * 4 / 10`), it flips `m_warmed_up` and records the start timestamp. The visible `elapsed_ms()` timer therefore starts only after warm-up — no confusing "0.4s" offset shown to user.
+- **`m_start_epoch_ms` dual-write pattern:** `start()` still writes an initial timestamp as a safe fallback, but the canonical "real start" is written by the data callback on warm-up completion. Because `elapsed_ms()` is read from the UI thread (not audio thread), `std::memory_order_relaxed` is fine for both the atomic write and read — no ordering guarantee needed across these unrelated operations.
+- **Device name + sample rate diagnostics:** Printing `device.capture.name` after `ma_device_init()` lets the user confirm they're on Bluetooth vs built-in mic. A sample-rate mismatch warning (if device doesn't honour 44100 Hz) surfaces quality issues proactively.
+- **`list_devices()` via `ma_context`:** Uses `ma_context_get_devices()` which returns a contiguous array owned by the context. Must uninit context after use. No heap allocation needed for device info arrays — miniaudio manages them internally within the context lifetime.
+
 ### Session — Audio & FFmpeg module creation
 - **MA_IMPLEMENTATION guard:** `recorder.cpp` defines `#define MINIAUDIO_IMPLEMENTATION` before including `vendor/miniaudio.h`; `player.cpp` includes the header without the define. This satisfies the single-definition rule for the miniaudio implementation blob. (Macro name confirmed from `vendor/README.md` — use `MINIAUDIO_IMPLEMENTATION`, not `MA_IMPLEMENTATION`.)
 - **PlayerContext pattern:** miniaudio's `pUserData` is a single `void*`. We heap-allocate a `PlayerContext` struct (holds `ma_device + ma_decoder + AudioPlayer*`) and cast it in the callback. The `m_device` field in `AudioPlayer` is repurposed as an opaque handle to this context.

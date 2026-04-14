@@ -143,6 +143,25 @@
 
 ---
 
+### Audio Warm-up & Device Diagnostics
+**Author:** Butch  
+**Date:** 2026-04-14  
+**Status:** Implemented
+
+**Warm-up discard (fixes "first part cut off" + 1 s glitch):** After `ma_device_start()`, discard the first `kWarmupSamples = 44100 * 4 / 10` (400 ms) of captured frames before writing to the WAV encoder. This absorbs the Bluetooth A2DP→HFP/SCO profile-switch transient and device ramp-up period.
+
+- `m_warmed_up` (atomic bool) — gates writes in `data_callback`
+- `m_warmup_samples_discarded` (atomic uint64) — counts discarded frames in the audio thread
+- `m_start_epoch_ms` is stamped by the data callback the moment warm-up completes — `elapsed_ms()` reflects only real recorded audio, not warm-up dead time
+
+**Device name + sample rate logging:** After `ma_device_init()` succeeds, prints `[audio] Recording device: <name>`. If `device.sampleRate != 44100`, prints a warning with the actual rate.
+
+**`--list-devices` flag:** `AudioRecorder::list_devices()` uses `ma_context_get_devices()` to enumerate and print all capture devices with index and default marker. `main.cpp` checks for `--list-devices` before launching the TUI.
+
+**Trade-off:** 400 ms of audio at the start of every take is silently discarded. Harmless on wired/USB mics (discards silence); eliminates Bluetooth artefacts. Constant is a named `constexpr` for easy tuning.
+
+---
+
 ### First Build — macOS Verification
 **Author:** Richard  
 **Date:** 2025-04-14  
