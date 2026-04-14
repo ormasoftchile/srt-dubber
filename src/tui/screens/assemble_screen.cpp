@@ -40,12 +40,17 @@ ScreenAction run_assemble_screen(core::Project& project,
     // ------------------------------------------------------------------
     std::vector<ffmpeg::ProcessedClip> clips;
     for (const auto& e : project.entries()) {
+        std::filesystem::path p;
         if (!e.processed_take_path.empty()) {
-            std::filesystem::path p(e.processed_take_path);
-            if (std::filesystem::exists(p)) {
-                clips.push_back({p, e.start_ms, e.index});
-            }
+            std::filesystem::path pp(e.processed_take_path);
+            if (std::filesystem::exists(pp)) p = pp;
         }
+        if (p.empty() && !e.raw_take_path.empty()) {
+            std::filesystem::path rp(e.raw_take_path);
+            if (std::filesystem::exists(rp)) p = rp;
+        }
+        if (!p.empty())
+            clips.push_back({p, e.start_ms, e.index});
     }
 
     // ------------------------------------------------------------------
@@ -53,7 +58,7 @@ ScreenAction run_assemble_screen(core::Project& project,
     // ------------------------------------------------------------------
     std::jthread assembly_thread([&, clips](std::stop_token) {
         if (clips.empty()) {
-            push_log("⚠  No processed clips found — run Process first.");
+            push_log("⚠  No takes found — record something first.");
             project.assemble_complete = true;
             screen.PostEvent(Event::Custom);
             return;
