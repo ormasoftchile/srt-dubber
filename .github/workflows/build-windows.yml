@@ -12,13 +12,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up MSVC developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+
       - name: Install dependencies (choco)
-        run: |
-          choco install ffmpeg cmake ninja -y
+        run: choco install ffmpeg ninja -y
 
       - name: Download miniaudio.h
         run: |
-          mkdir -p vendor
+          if (!(Test-Path vendor)) { New-Item -ItemType Directory -Path vendor }
           curl -L https://raw.githubusercontent.com/mackron/miniaudio/master/miniaudio.h -o vendor/miniaudio.h
 
       - name: Configure

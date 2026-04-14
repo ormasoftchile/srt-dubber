@@ -49,6 +49,8 @@ private:
     std::atomic<int64_t>  m_start_epoch_ms          {0};
     std::atomic<bool>     m_warmed_up               {false};
     std::atomic<uint64_t> m_warmup_samples_discarded {0};
+    std::atomic<int32_t>  m_peak_sample              {0};
+    std::atomic<uint64_t> m_frames_written           {0};
 
     // Called by miniaudio on each captured chunk.
     static void data_callback(ma_device*, void*, const void*, unsigned int);
