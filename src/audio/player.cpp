@@ -14,6 +14,10 @@ struct PlayerContext {
     AudioPlayer* player  {nullptr};
     ma_decoder   decoder {};
     ma_device    device  {};
+    // Silence pre-roll: discard output for this many frames while BT hardware
+    // stabilises. ~200ms at 44100 Hz.
+    static constexpr unsigned int kWarmupFrames = 44100 * 200 / 1000; // 8820
+    std::atomic<unsigned int> warmup_remaining {kWarmupFrames};
 };
 
 // ---------------------------------------------------------------------------
@@ -28,14 +32,28 @@ void AudioPlayer::data_callback(ma_device*   device,
     if (!ctx || !ctx->player->m_playing.load(std::memory_order_relaxed))
         return;
 
+    unsigned int bpf = ma_get_bytes_per_frame(
+        device->playback.format, device->playback.channels);
+
+    // During warmup, output silence and let the BT device stabilise.
+    unsigned int warm = ctx->warmup_remaining.load(std::memory_order_relaxed);
+    if (warm > 0) {
+        unsigned int silence_frames = (frameCount < warm) ? frameCount : warm;
+        std::memset(pOutput, 0, silence_frames * bpf);
+        ctx->warmup_remaining.fetch_sub(silence_frames, std::memory_order_relaxed);
+        // If warmup consumed all frames, nothing left to fill this callback.
+        if (silence_frames == frameCount) return;
+        // Partial warmup: fill remainder from decoder.
+        frameCount -= silence_frames;
+        pOutput = static_cast<uint8_t*>(pOutput) + silence_frames * bpf;
+    }
+
     ma_uint64 frames_read = 0;
     ma_result result = ma_decoder_read_pcm_frames(
         &ctx->decoder, pOutput, frameCount, &frames_read);
 
     if (frames_read < frameCount) {
         // Pad remaining output with silence.
-        unsigned int bpf = ma_get_bytes_per_frame(
-            device->playback.format, device->playback.channels);
         std::memset(
             static_cast<uint8_t*>(pOutput) + frames_read * bpf,
             0,
