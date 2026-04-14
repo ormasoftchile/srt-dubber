@@ -93,7 +93,7 @@
 
 **C++20 with `CMAKE_CXX_EXTENSIONS OFF`** — enforces strict standard compliance; avoids divergent behavior between Apple Clang and GCC.
 
-**FTXUI v5.0.0 pinned by git tag** — first stable release with Component-based event model; FetchContent ensures reproducible builds.
+**FTXUI v5.0.0 → main** — initial v5.0.0; updated to main branch after Windows threading fixes (posix model required).
 
 **nlohmann/json via tarball URL** — faster than git clone; SHA256 pinning for reproducibility; `JSON_BuildTests OFF` avoids pulling Catch2.
 
@@ -106,6 +106,55 @@
 **ASan/UBSan in Debug (non-MSVC)** — sanitizer flags differ for MSVC (`/fsanitize`); linker flags mirror compile flags.
 
 **Output directory convention:** `takes/`, `processed/`, `output/` relative to working directory; created at runtime; globally gitignored.
+
+---
+
+### Integration Audit — Wave 1 Pre-Build Fixes
+**Author:** Alan  
+**Date:** 2025-04-14  
+**Status:** Implemented
+
+**Namespace discipline:** Wrapped FFmpeg types in `namespace ffmpeg {}` — `ProcessedClip`, `ProcessResult`, `AssembleResult`, `FfmpegProcessor`, `FfmpegAssembler` now explicit module boundaries.
+
+**Include path standardization:** All `.cpp` files use canonical paths relative to `src/` root. Local headers via quotes, FetchContent via angle brackets.
+
+**Removed nlohmann_json link:** `core/project.cpp` uses hand-rolled JSON; dependency was unused and removed from CMakeLists.txt target_link_libraries.
+
+**Simplified main.cpp:** Replaced complex CLI with minimal TUI launcher — `core::Project::load_or_create()` → `App::run()`.
+
+**Result:** Zero build-blocking issues identified.
+
+---
+
+### Windows Cross-Compile Build Verification
+**Author:** Flood  
+**Date:** 2025-04-14  
+**Status:** Verified
+
+**MinGW threading model:** Changed to posix threading (`g++-mingw-w64-x86-64-posix`) — required for std::thread, FTXUI async components.
+
+**MSVC-only flags:** Wrapped `/utf-8` and `CMAKE_MSVC_RUNTIME_LIBRARY` in `if(MSVC)` guards to allow both MSVC and MinGW paths.
+
+**FTXUI pinning:** Updated to main branch after threading fixes (v5.0.0 → main).
+
+**Deliverable:** 4.3 MB PE32+ executable (x86-64); clean build in ~60s, cached ~20s.
+
+**Files modified:** CMakeLists.txt, Dockerfile.windows-cross, cmake/toolchains/mingw-w64.cmake, cmake/windows-flags.cmake.
+
+---
+
+### First Build — macOS Verification
+**Author:** Richard  
+**Date:** 2025-04-14  
+**Status:** Clean
+
+**Result:** Zero compilation errors on first attempt (Apple Silicon, clang 17.0.0).
+
+**Build metrics:** FetchContent FTXUI v5.0.0, nlohmann/json 3.11.3; 12 library sources + main.cpp; ~120s total.
+
+**What went RIGHT:** Include hygiene, miniaudio integration (single-definition rule), type system, C++20 compliance, platform flags.
+
+**Validation:** Binary runs correctly; usage message displays properly.
 
 ---
 
