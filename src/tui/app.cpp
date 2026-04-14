@@ -67,7 +67,7 @@ void App::run() {
             }
 
             case Screen::Assemble: {
-                tui::run_assemble_screen(project_);
+                tui::run_assemble_screen(project_, video_path_);
                 current_screen_ = Screen::Session;
                 break;
             }

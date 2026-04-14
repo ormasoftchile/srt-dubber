@@ -1,22 +1,97 @@
 #include "tui/screens/assemble_screen.hpp"
 
+#include "ffmpeg/assembler.hpp"
+#include "ffmpeg/types.hpp"
+
 #include "ftxui/component/component.hpp"
 #include "ftxui/component/event.hpp"
 #include "ftxui/component/screen_interactive.hpp"
 #include "ftxui/dom/elements.hpp"
 
 #include <chrono>
+#include <mutex>
 #include <thread>
 
 using namespace ftxui;
 
 namespace tui {
 
-ScreenAction run_assemble_screen(core::Project& project) {
+ScreenAction run_assemble_screen(core::Project& project,
+                                 const std::filesystem::path& video_path) {
+    // Reset transient state from any prior run.
+    project.assemble_log.clear();
+    project.assemble_complete = false;
+    project.output_path.clear();
+
     auto screen = ScreenInteractive::Fullscreen();
     ScreenAction action = ScreenAction::GoSession;
+    std::mutex log_mutex;
 
-    // Refresh every 200 ms to pick up log lines pushed by the assembly thread.
+    auto push_log = [&](const std::string& line) {
+        {
+            std::lock_guard<std::mutex> lock(log_mutex);
+            project.assemble_log.push_back(line);
+        }
+        screen.PostEvent(Event::Custom);
+    };
+
+    // ------------------------------------------------------------------
+    // Collect processed clips
+    // ------------------------------------------------------------------
+    std::vector<ffmpeg::ProcessedClip> clips;
+    for (const auto& e : project.entries()) {
+        if (!e.processed_take_path.empty()) {
+            std::filesystem::path p(e.processed_take_path);
+            if (std::filesystem::exists(p)) {
+                clips.push_back({p, e.start_ms, e.index});
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Assembly thread
+    // ------------------------------------------------------------------
+    std::jthread assembly_thread([&, clips](std::stop_token) {
+        if (clips.empty()) {
+            push_log("⚠  No processed clips found — run Process first.");
+            project.assemble_complete = true;
+            screen.PostEvent(Event::Custom);
+            return;
+        }
+
+        push_log("Starting assembly (" + std::to_string(clips.size()) + " clips)…");
+
+        auto voiceover_out = project.output_dir() / "voiceover.wav";
+        auto video_out     = project.output_dir() / "output.mp4";
+
+        ffmpeg::FfmpegAssembler assembler;
+        auto result = assembler.assemble(
+            clips,
+            /*video_duration_ms=*/0,
+            video_path,
+            voiceover_out,
+            video_out,
+            [&](int cur, int total) {
+                if (cur == 1) push_log("✓  Voiceover mix complete.");
+                if (cur == total) push_log("✓  Video mux complete.");
+            }
+        );
+
+        if (result.success) {
+            project.output_path = video_out.string();
+            push_log("✓  Done → " + video_out.string());
+            project.save();
+        } else {
+            push_log("✗  Assembly failed: " + result.error);
+        }
+
+        project.assemble_complete = true;
+        screen.PostEvent(Event::Custom);
+    });
+
+    // ------------------------------------------------------------------
+    // Refresh thread (drives UI redraws while assembling)
+    // ------------------------------------------------------------------
     std::jthread refresh_thread([&](std::stop_token stop) {
         while (!stop.stop_requested()) {
             screen.PostEvent(Event::Custom);
@@ -24,26 +99,39 @@ ScreenAction run_assemble_screen(core::Project& project) {
         }
     });
 
+    // ------------------------------------------------------------------
+    // Renderer
+    // ------------------------------------------------------------------
     auto renderer = Renderer([&]() -> Element {
-        const auto& log = project.assemble_log;
+        std::vector<std::string> log_snapshot;
+        {
+            std::lock_guard<std::mutex> lock(log_mutex);
+            log_snapshot = project.assemble_log;
+        }
 
         Elements lines;
-        lines.reserve(log.size() + 1);
-        for (const auto& line : log) {
+        lines.reserve(log_snapshot.size() + 1);
+        for (const auto& line : log_snapshot)
             lines.push_back(text("  " + line));
-        }
-        if (lines.empty()) {
-            lines.push_back(dim(text("  (no output yet)")));
-        }
+        if (lines.empty())
+            lines.push_back(dim(text("  (starting…)")));
 
         Element footer;
         if (project.assemble_complete) {
-            footer = vbox({
-                color(Color::Green,
-                      text("  ✓  Output: " + project.output_path)),
-                separator(),
-                hbox({text("  [q] back"), filler()}),
-            });
+            if (!project.output_path.empty()) {
+                footer = vbox({
+                    color(Color::Green,
+                          text("  ✓  Output: " + project.output_path)),
+                    separator(),
+                    hbox({text("  [q] back"), filler()}),
+                });
+            } else {
+                footer = vbox({
+                    color(Color::Red, text("  Assembly failed — see log above.")),
+                    separator(),
+                    hbox({text("  [q] back"), filler()}),
+                });
+            }
         } else {
             footer = vbox({
                 dim(text("  Assembling…")),
