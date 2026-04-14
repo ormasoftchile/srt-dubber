@@ -1,0 +1,23 @@
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y \
+    cmake ninja-build git curl \
+    mingw-w64 \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY . .
+
+# Download miniaudio.h if not present
+RUN test -f vendor/miniaudio.h || \
+    (mkdir -p vendor && curl -L \
+     https://raw.githubusercontent.com/mackron/miniaudio/master/miniaudio.h \
+     -o vendor/miniaudio.h)
+
+RUN cmake -B build-windows \
+    -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/mingw-w64.cmake \
+    -DCMAKE_BUILD_TYPE=Release \
+    -G Ninja
+
+RUN cmake --build build-windows -j$(nproc)
