@@ -11,7 +11,8 @@
 class App {
 public:
     explicit App(core::Project& project,
-                 std::filesystem::path video_path = {});
+                 std::filesystem::path video_path = {},
+                 int device_index = -1);
     void run();
 
 private:

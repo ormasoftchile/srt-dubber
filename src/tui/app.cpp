@@ -5,8 +5,8 @@
 #include "tui/screens/review_screen.hpp"
 #include "tui/screens/assemble_screen.hpp"
 
-App::App(core::Project& project, std::filesystem::path video_path)
-    : project_(project), video_path_(std::move(video_path)) {}
+App::App(core::Project& project, std::filesystem::path video_path, int device_index)
+    : project_(project), video_path_(std::move(video_path)), recorder_(device_index) {}
 
 void App::run() {
     bool running = true;

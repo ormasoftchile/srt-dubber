@@ -25,3 +25,12 @@
 - **atempo chain:** `atempo` filter only supports rates 0.5–2.0. Since our cap is 1.08x we never need to chain multiple `atempo` filters.
 - **amix filter_complex:** each clip gets an `adelay={ms}|{ms}` label, then all labels feed into a single `amix=inputs=N:normalize=0`. `normalize=0` preserves individual clip levels post-loudnorm.
 - **ffprobe output parsing:** `popen` + `fgets` loop then `std::stod`. Robust to trailing newline from ffprobe CSV output.
+
+### Session — --device N flag for audio input selection
+- **Motivation:** Mac mini has no built-in mic; user has two devices (AirPods Max at [0], ZoomAudioDevice at [1]) and needs to select by index.
+- **AudioRecorder constructor now takes `int device_index = -1`:** stored as `m_device_index`. Default -1 = use system default (pDeviceID = nullptr, existing behavior unchanged).
+- **Device selection in `start()`:** when `m_device_index >= 0`, opens a short-lived `ma_context`, calls `ma_context_get_devices()`, copies the `ma_device_id` at that index into a local `selected_id`, and sets `dev_cfg.capture.pDeviceID = &selected_id` before `ma_device_init()`. Context is immediately uninited after extracting the ID. Falls back to default with a warning if index is out of range.
+- **`ma_device_id` lifetime:** the id must survive `ma_device_init()` — storing in a local on the stack within `start()` is safe since `ma_device_init` completes synchronously before the local goes out of scope.
+- **App constructor updated:** `App(project, video_path, device_index)` — passes `device_index` straight to `AudioRecorder(device_index)` in the member initialiser list. No separate setter needed.
+- **main.cpp arg parsing:** `--device N` consumed before the positional args via a `first_pos` offset. `--list-devices` path unchanged. Hint `[audio] Use --list-devices...` printed to stderr before TUI launch so user sees it regardless of device choice.
+- **No changes to recording_screen.cpp:** device selection is encapsulated in the recorder itself, so no screen-level plumbing was needed.

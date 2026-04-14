@@ -143,6 +143,25 @@
 
 ---
 
+### --device N Flag for Input Device Selection
+**Author:** Butch  
+**Date:** 2026-04-14  
+**Status:** Implemented
+
+**Problem:** Mac mini and other systems without built-in microphones may enumerate multiple capture devices. Without a selection mechanism the app always opens the system default, which may be the wrong device (e.g. AirPods Max instead of ZoomAudioDevice).
+
+**`AudioRecorder` constructor:** `explicit AudioRecorder(int device_index = -1)` — stores `m_device_index`.
+
+**In `start()`:** When `m_device_index >= 0`, opens a temporary `ma_context`, enumerates capture devices, copies the `ma_device_id` at that index, and passes `&selected_id` to `dev_cfg.capture.pDeviceID`. Context uninited immediately after. Falls back to default with a stderr warning if index is out of range. When `m_device_index == -1`, `pDeviceID` remains `nullptr` — identical to previous behaviour.
+
+**`App`:** Constructor gains `int device_index = -1`; passes it to `AudioRecorder` in member initialiser list.
+
+**`main.cpp`:** Parses `--device N` (two tokens) before positional args using a `first_pos` offset; prints `--list-devices` hint to stderr; updated usage message.
+
+**Non-changes:** `recording_screen.cpp` untouched — device selection fully encapsulated in `AudioRecorder`. Warm-up / Bluetooth fix logic untouched.
+
+---
+
 ### Audio Warm-up & Device Diagnostics
 **Author:** Butch  
 **Date:** 2026-04-14  

@@ -9,7 +9,7 @@ struct ma_encoder;
 
 class AudioRecorder {
 public:
-    AudioRecorder();
+    explicit AudioRecorder(int device_index = -1);
     ~AudioRecorder();
 
     // Begin capturing audio and writing to output_wav (PCM 16-bit, mono, 44100 Hz).
@@ -28,6 +28,8 @@ private:
     // Samples to discard after device start to let the device (and Bluetooth
     // profile switch) settle before writing audio. 400 ms at 44100 Hz.
     static constexpr unsigned int kWarmupSamples = 44100 * 4 / 10;
+
+    int         m_device_index {-1};
 
     // miniaudio objects stored on the heap to keep the header include-free.
     ma_device*  m_device  {nullptr};

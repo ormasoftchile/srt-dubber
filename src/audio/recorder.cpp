@@ -44,8 +44,9 @@ void AudioRecorder::data_callback(ma_device* device,
 // ---------------------------------------------------------------------------
 // Constructor / Destructor
 // ---------------------------------------------------------------------------
-AudioRecorder::AudioRecorder()
-    : m_device (new ma_device{})
+AudioRecorder::AudioRecorder(int device_index)
+    : m_device_index(device_index)
+    , m_device (new ma_device{})
     , m_encoder(new ma_encoder{})
 {}
 
@@ -89,6 +90,29 @@ bool AudioRecorder::start(const std::filesystem::path& output_wav)
     dev_cfg.sampleRate        = 44100;
     dev_cfg.dataCallback      = AudioRecorder::data_callback;
     dev_cfg.pUserData         = this;
+
+    // If a specific device index was requested, enumerate to find its ID.
+    ma_device_id selected_id{};
+    if (m_device_index >= 0) {
+        ma_context context;
+        if (ma_context_init(nullptr, 0, nullptr, &context) == MA_SUCCESS) {
+            ma_device_info* capture_devices = nullptr;
+            ma_uint32       capture_count   = 0;
+            if (ma_context_get_devices(&context, nullptr, nullptr,
+                                       &capture_devices, &capture_count) == MA_SUCCESS
+                && (ma_uint32)m_device_index < capture_count)
+            {
+                selected_id = capture_devices[m_device_index].id;
+                dev_cfg.capture.pDeviceID = &selected_id;
+            } else {
+                fprintf(stderr,
+                    "[audio] Warning: device index %d not found (%u devices). "
+                    "Falling back to default.\n",
+                    m_device_index, capture_count);
+            }
+            ma_context_uninit(&context);
+        }
+    }
 
     if (ma_device_init(nullptr, &dev_cfg, m_device) != MA_SUCCESS) {
         ma_encoder_uninit(m_encoder);
