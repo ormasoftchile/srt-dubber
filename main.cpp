@@ -8,7 +8,14 @@
 #include "tui/app.hpp"
 #include "audio/recorder.hpp"
 
+static constexpr const char* kVersion = "0.1.0";
+
 int main(int argc, char* argv[]) {
+    if (argc == 2 && std::string(argv[1]) == "--version") {
+        std::cout << "srt-dubber " << kVersion << "\n";
+        return 0;
+    }
+
     if (argc == 2 && std::string(argv[1]) == "--list-devices") {
         AudioRecorder::list_devices();
         return 0;
@@ -80,6 +87,7 @@ int main(int argc, char* argv[]) {
         std::cerr << "Usage: srt-dubber [--device N] <input.srt> [video.mp4]\n";
         std::cerr << "       srt-dubber [--device N] --resync new.srt\n";
         std::cerr << "       srt-dubber --list-devices\n";
+        std::cerr << "       srt-dubber --version\n";
         return 1;
     }
 
