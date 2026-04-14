@@ -6,6 +6,11 @@
 #include <sstream>
 #include <string>
 
+#ifdef _MSC_VER
+#define popen  _popen
+#define pclose _pclose
+#endif
+
 namespace ffmpeg {
 
 // ---------------------------------------------------------------------------
@@ -29,7 +34,11 @@ int64_t FfmpegAssembler::get_video_duration_ms(const std::filesystem::path& mp4)
 {
     std::string cmd =
         "ffprobe -v error -show_entries format=duration "
+#ifdef _WIN32
+        "-of csv=p=0 " + qa(mp4) + " 2>NUL";
+#else
         "-of csv=p=0 " + qa(mp4) + " 2>/dev/null";
+#endif
 
     std::array<char, 64> buf{};
     std::string result;
@@ -98,7 +107,11 @@ AssembleResult FfmpegAssembler::assemble(
         cmd << "[d" << i << "]";
     cmd << "amix=inputs=" << clips.size() << ":normalize=0\"";
 
+#ifdef _WIN32
+    cmd << " " << qa(voiceover_out) << " 2>NUL";
+#else
     cmd << " " << qa(voiceover_out) << " 2>/dev/null";
+#endif
 
     if (!run_asm(cmd.str())) {
         res.error = "ffmpeg voiceover mix failed";
@@ -114,7 +127,11 @@ AssembleResult FfmpegAssembler::assemble(
         "ffmpeg -y -i " + qa(video_input) +
         " -i " + qa(voiceover_out) +
         " -c:v copy -c:a aac " +
+#ifdef _WIN32
+        qa(video_out) + " 2>NUL";
+#else
         qa(video_out) + " 2>/dev/null";
+#endif
 
     if (!run_asm(mux_cmd)) {
         res.error = "ffmpeg mux failed";

@@ -11,6 +11,23 @@
 static constexpr const char* kVersion = "0.1.0";
 
 int main(int argc, char* argv[]) {
+    if (argc == 2 && std::string(argv[1]) == "--help") {
+        std::cout << "srt-dubber " << kVersion << "\n\n"
+                  << "Usage:\n"
+                  << "  srt-dubber [--device N] <input.srt> [video.mp4]\n"
+                  << "  srt-dubber [--device N] --resync new.srt\n"
+                  << "  srt-dubber --list-devices\n"
+                  << "  srt-dubber --version\n"
+                  << "  srt-dubber --help\n\n"
+                  << "Options:\n"
+                  << "  --device N       Use audio device at index N\n"
+                  << "  --resync new.srt Re-sync existing project to updated SRT\n"
+                  << "  --list-devices   List available audio devices\n"
+                  << "  --version        Show version\n"
+                  << "  --help           Show this help message\n";
+        return 0;
+    }
+
     if (argc == 2 && std::string(argv[1]) == "--version") {
         std::cout << "srt-dubber " << kVersion << "\n";
         return 0;

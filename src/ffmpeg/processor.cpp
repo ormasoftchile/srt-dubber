@@ -6,6 +6,11 @@
 #include <sstream>
 #include <string>
 
+#ifdef _MSC_VER
+#define popen  _popen
+#define pclose _pclose
+#endif
+
 namespace ffmpeg {
 
 // ---------------------------------------------------------------------------
@@ -34,7 +39,11 @@ bool FfmpegProcessor::trim_silence(const std::filesystem::path& in,
         " -af silenceremove="
             "start_periods=1:start_silence=0.5:start_threshold=-50dB:"
             "stop_periods=1:stop_silence=0.5:stop_threshold=-50dB "
+#ifdef _WIN32
+        + q(out) + " 2>NUL";
+#else
         + q(out) + " 2>/dev/null";
+#endif
     return run(cmd);
 }
 
@@ -47,7 +56,11 @@ bool FfmpegProcessor::normalize(const std::filesystem::path& in,
     std::string cmd =
         "ffmpeg -y -i " + q(in) +
         " -af loudnorm=I=-16:TP=-1.5:LRA=11 "
+#ifdef _WIN32
+        + q(out) + " 2>NUL";
+#else
         + q(out) + " 2>/dev/null";
+#endif
     return run(cmd);
 }
 
@@ -58,7 +71,11 @@ int64_t FfmpegProcessor::get_duration_ms(const std::filesystem::path& wav)
 {
     std::string cmd =
         "ffprobe -v error -show_entries format=duration "
+#ifdef _WIN32
+        "-of csv=p=0 " + q(wav) + " 2>NUL";
+#else
         "-of csv=p=0 " + q(wav) + " 2>/dev/null";
+#endif
 
     std::array<char, 64> buf{};
     std::string result;
@@ -90,7 +107,11 @@ bool FfmpegProcessor::apply_atempo(const std::filesystem::path& in,
     std::string cmd =
         "ffmpeg -y -i " + q(in) +
         " -af atempo=" + oss.str() + " " +
+#ifdef _WIN32
+        q(out) + " 2>NUL";
+#else
         q(out) + " 2>/dev/null";
+#endif
     return run(cmd);
 }
 

@@ -42,6 +42,16 @@ void AudioRecorder::data_callback(ma_device* device,
     if (!self->m_capture_active.load(std::memory_order_acquire))
         return;
 
+    // Track peak sample for diagnostics.
+    const auto* samples = static_cast<const int16_t*>(pInput);
+    int32_t peak = self->m_peak_sample.load(std::memory_order_relaxed);
+    for (unsigned int i = 0; i < frameCount; ++i) {
+        int32_t abs_val = samples[i] < 0 ? -samples[i] : samples[i];
+        if (abs_val > peak) peak = abs_val;
+    }
+    self->m_peak_sample.store(peak, std::memory_order_relaxed);
+    self->m_frames_written.fetch_add(frameCount, std::memory_order_relaxed);
+
     ma_encoder_write_pcm_frames(self->m_encoder, pInput, frameCount, nullptr);
 }
 
@@ -75,6 +85,8 @@ bool AudioRecorder::start(const std::filesystem::path& output_wav)
     m_warmed_up.store(false, std::memory_order_relaxed);
     m_warmup_samples_discarded.store(0, std::memory_order_relaxed);
     m_capture_active.store(false, std::memory_order_relaxed);
+    m_peak_sample.store(0, std::memory_order_relaxed);
+    m_frames_written.store(0, std::memory_order_relaxed);
 
     // --- encoder ---
     ma_encoder_config enc_cfg = ma_encoder_config_init(
@@ -163,6 +175,9 @@ bool AudioRecorder::stop()
     ma_device_stop(m_device);
     ma_device_uninit(m_device);
     ma_encoder_uninit(m_encoder);
+
+    fprintf(stderr, "[audio] Stopped. Frames written: %llu, peak sample: %d / 32767\n",
+            (unsigned long long)m_frames_written.load(), (int)m_peak_sample.load());
 
     // Reset objects so they can be reused.
     *m_device  = ma_device{};
