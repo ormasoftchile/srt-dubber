@@ -99,9 +99,9 @@ ScreenAction run_recording_screen(core::Project& project,
             countdown_state.store(CountdownState::One);
             if (sleep_or_abort(1s)) { countdown_state.store(CountdownState::None); return; }
             countdown_state.store(CountdownState::Go);
+            recorder.set_capture_active(true); // WAV writing starts NOW
             if (sleep_or_abort(300ms)) { countdown_state.store(CountdownState::None); return; }
             countdown_state.store(CountdownState::None);
-            // recorder already running — no second start() needed
         });
     };
 
@@ -148,7 +148,7 @@ ScreenAction run_recording_screen(core::Project& project,
         // ── Status badge ─────────────────────────────────────────────────
         std::string status_str{core::take_status_to_string(entry.status)};
 
-        // ── Body: countdown overlay or normal subtitle view ───────────────
+        // ── Body: subtitle always visible; countdown number overlaid beneath ──
         Element body;
         if (cstate != CountdownState::None) {
             Element count_elem;
@@ -161,7 +161,9 @@ ScreenAction run_recording_screen(core::Project& project,
                 count_elem = bold(text(label));
             }
             body = vbox({
-                filler(),
+                text(""),
+                paragraphAlignCenter("\"" + display_text + "\"") | bold,
+                text(""),
                 hbox({filler(), count_elem | size(WIDTH, GREATER_THAN, 3), filler()}),
                 filler(),
             }) | flex;

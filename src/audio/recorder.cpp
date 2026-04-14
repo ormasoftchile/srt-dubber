@@ -38,6 +38,10 @@ void AudioRecorder::data_callback(ma_device* device,
         return;
     }
 
+    // Only write to the WAV file once capture is active (i.e., after Go!).
+    if (!self->m_capture_active.load(std::memory_order_acquire))
+        return;
+
     ma_encoder_write_pcm_frames(self->m_encoder, pInput, frameCount, nullptr);
 }
 
@@ -70,6 +74,7 @@ bool AudioRecorder::start(const std::filesystem::path& output_wav)
     // Reset warm-up state for each new recording.
     m_warmed_up.store(false, std::memory_order_relaxed);
     m_warmup_samples_discarded.store(0, std::memory_order_relaxed);
+    m_capture_active.store(false, std::memory_order_relaxed);
 
     // --- encoder ---
     ma_encoder_config enc_cfg = ma_encoder_config_init(
@@ -153,6 +158,8 @@ bool AudioRecorder::stop()
     if (!m_recording.exchange(false))
         return false;
 
+    m_capture_active.store(false, std::memory_order_relaxed);
+
     ma_device_stop(m_device);
     ma_device_uninit(m_device);
     ma_encoder_uninit(m_encoder);
@@ -162,6 +169,14 @@ bool AudioRecorder::stop()
     *m_encoder = ma_encoder{};
 
     return true;
+}
+
+// ---------------------------------------------------------------------------
+// set_capture_active()
+// ---------------------------------------------------------------------------
+void AudioRecorder::set_capture_active(bool active)
+{
+    m_capture_active.store(active, std::memory_order_release);
 }
 
 // ---------------------------------------------------------------------------

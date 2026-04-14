@@ -18,6 +18,11 @@ public:
     // Stop capturing and flush the WAV file. Safe to call from any thread.
     bool stop();
 
+    // Enable/disable writing captured samples to the WAV file. Call with
+    // true after the countdown completes ("Go!") so no pre-speech silence
+    // is written. Automatically reset to false on stop().
+    void set_capture_active(bool active);
+
     bool    is_recording()  const;
     // True during the initial discard window after start(). Only meaningful
     // while is_recording() is true.
@@ -40,6 +45,7 @@ private:
     ma_encoder* m_encoder {nullptr};
 
     std::atomic<bool>     m_recording              {false};
+    std::atomic<bool>     m_capture_active          {false};
     std::atomic<int64_t>  m_start_epoch_ms          {0};
     std::atomic<bool>     m_warmed_up               {false};
     std::atomic<uint64_t> m_warmup_samples_discarded {0};
