@@ -80,12 +80,14 @@ ScreenAction run_recording_screen(core::Project& project,
         }
     };
 
-    // Begin a 3-2-1-Go! countdown, then open the mic.
+    // Begin a 3-2-1-Go! countdown. Mic opens immediately so warmup (1.5s)
+    // runs in parallel with the countdown (~3.3s) — by Go! the mic is hot.
     auto start_countdown = [&](int idx) {
         auto path = project.takes_dir() /
                     (std::to_string(entries[idx].index) + ".wav");
+        recorder.start(path); // warmup begins now, completes well before Go!
         countdown_state.store(CountdownState::Three);
-        countdown_thread = std::jthread([&, path = std::move(path)](std::stop_token stop) {
+        countdown_thread = std::jthread([&](std::stop_token stop) {
             using namespace std::chrono_literals;
             auto sleep_or_abort = [&](auto dur) -> bool {
                 std::this_thread::sleep_for(dur);
@@ -99,7 +101,7 @@ ScreenAction run_recording_screen(core::Project& project,
             countdown_state.store(CountdownState::Go);
             if (sleep_or_abort(300ms)) { countdown_state.store(CountdownState::None); return; }
             countdown_state.store(CountdownState::None);
-            recorder.start(path);
+            // recorder already running — no second start() needed
         });
     };
 
