@@ -18,16 +18,20 @@ public:
     // Stop capturing and flush the WAV file. Safe to call from any thread.
     bool stop();
 
-    bool    is_recording() const;
-    int64_t elapsed_ms()   const;
+    bool    is_recording()  const;
+    // True during the initial discard window after start(). Only meaningful
+    // while is_recording() is true.
+    bool    is_warming_up() const;
+    int64_t elapsed_ms()    const;
 
     // Print available capture devices to stderr and return.
     static void list_devices();
 
 private:
     // Samples to discard after device start to let the device (and Bluetooth
-    // profile switch) settle before writing audio. 400 ms at 44100 Hz.
-    static constexpr unsigned int kWarmupSamples = 44100 * 4 / 10;
+    // profile switch) settle before writing audio. 1500 ms at 44100 Hz
+    // (AirPods Max HFP profile switch requires ~1s+ to stabilise).
+    static constexpr unsigned int kWarmupSamples = 44100 * 3 / 2;
 
     int         m_device_index {-1};
 

@@ -75,7 +75,11 @@ ScreenAction run_recording_screen(core::Project& project,
         bar.push_back(text(fmt_dur_ms(entry.slot_duration_ms) + " "));
         if (rec) {
             bar.push_back(text(" " + fmt_dur_ms(recorder.elapsed_ms()) + " "));
-            bar.push_back(bold(color(Color::Red, text(" ●REC "))));
+            if (recorder.is_warming_up()) {
+                bar.push_back(bold(color(Color::Yellow, text(" ● warming up… "))));
+            } else {
+                bar.push_back(bold(color(Color::Red, text(" ●REC "))));
+            }
         } else {
             bar.push_back(dim(text(" ●    ")));
         }

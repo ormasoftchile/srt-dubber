@@ -172,6 +172,11 @@ bool AudioRecorder::is_recording() const
     return m_recording.load(std::memory_order_acquire);
 }
 
+bool AudioRecorder::is_warming_up() const
+{
+    return !m_warmed_up.load(std::memory_order_relaxed);
+}
+
 int64_t AudioRecorder::elapsed_ms() const
 {
     if (!is_recording())
