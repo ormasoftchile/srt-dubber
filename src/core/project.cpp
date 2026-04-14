@@ -1,4 +1,4 @@
-#include "project.hpp"
+#include "core/project.hpp"
 
 #include <cassert>
 #include <charconv>
@@ -7,7 +7,7 @@
 #include <stdexcept>
 #include <string>
 
-#include "../srt/parser.hpp"
+#include "srt/parser.hpp"
 
 namespace core {
 

@@ -1,8 +1,8 @@
 // MINIAUDIO_IMPLEMENTATION must be defined in exactly ONE translation unit.
 #define MINIAUDIO_IMPLEMENTATION
-#include "../../vendor/miniaudio.h"
+#include "miniaudio.h"
 
-#include "recorder.hpp"
+#include "audio/recorder.hpp"
 
 #include <chrono>
 #include <cstring>

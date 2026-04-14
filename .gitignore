@@ -1,0 +1,42 @@
+# Squad: ignore runtime state (logs, inbox, sessions)
+.squad/orchestration-log/
+.squad/log/
+.squad/decisions/inbox/
+.squad/sessions/
+# Squad: SubSquad activation file (local to this machine)
+.squad-workstream
+
+# Build artefacts
+build/
+.build/
+cmake-build-*/
+out/
+
+# Compiled objects & libraries
+*.o
+*.a
+*.so
+*.dylib
+*.exe
+*.lib
+*.dll
+
+# Vendor — download separately (see vendor/README.md)
+vendor/miniaudio.h
+
+# Runtime output directories
+takes/
+processed/
+output/
+
+# Project state file
+project.json
+
+# macOS
+.DS_Store
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo

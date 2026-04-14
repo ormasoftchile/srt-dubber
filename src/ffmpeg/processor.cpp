@@ -1,10 +1,12 @@
-#include "processor.hpp"
+#include "ffmpeg/processor.hpp"
 
 #include <array>
 #include <cstdio>
 #include <cstdlib>
 #include <sstream>
 #include <string>
+
+namespace ffmpeg {
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -162,3 +164,5 @@ ProcessResult FfmpegProcessor::process_take(
     res.duration_ms = dur_ms;
     return res;
 }
+
+} // namespace ffmpeg

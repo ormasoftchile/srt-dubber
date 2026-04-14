@@ -1,8 +1,8 @@
 // player.cpp — AudioPlayer implementation via miniaudio.
 // MINIAUDIO_IMPLEMENTATION is already defined in recorder.cpp; do NOT repeat it here.
-#include "../../vendor/miniaudio.h"
+#include "miniaudio.h"
 
-#include "player.hpp"
+#include "audio/player.hpp"
 
 #include <cstring>
 

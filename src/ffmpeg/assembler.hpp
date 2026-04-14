@@ -1,10 +1,12 @@
 #pragma once
-#include "types.hpp"
+#include "ffmpeg/types.hpp"
 #include <filesystem>
 #include <functional>
 #include <string>
 #include <vector>
 #include <cstdint>
+
+namespace ffmpeg {
 
 struct AssembleResult {
     bool        success {false};
@@ -26,3 +28,5 @@ public:
 private:
     int64_t get_video_duration_ms(const std::filesystem::path& mp4);
 };
+
+} // namespace ffmpeg

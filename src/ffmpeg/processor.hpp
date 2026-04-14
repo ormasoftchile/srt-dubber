@@ -3,6 +3,8 @@
 #include <string>
 #include <cstdint>
 
+namespace ffmpeg {
+
 struct ProcessResult {
     bool        success      {false};
     int64_t     duration_ms  {0};
@@ -38,3 +40,5 @@ private:
                       const std::filesystem::path& out,
                       double rate);
 };
+
+} // namespace ffmpeg

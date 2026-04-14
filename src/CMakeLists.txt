@@ -16,7 +16,6 @@ target_link_libraries(srt_dubber_lib PUBLIC
   ftxui::screen
   ftxui::dom
   ftxui::component
-  nlohmann_json::nlohmann_json
 )
 
 target_include_directories(srt_dubber_lib PUBLIC

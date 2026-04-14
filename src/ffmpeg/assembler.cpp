@@ -1,10 +1,12 @@
-#include "assembler.hpp"
+#include "ffmpeg/assembler.hpp"
 
 #include <array>
 #include <cstdio>
 #include <cstdlib>
 #include <sstream>
 #include <string>
+
+namespace ffmpeg {
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -124,3 +126,5 @@ AssembleResult FfmpegAssembler::assemble(
     res.success = true;
     return res;
 }
+
+} // namespace ffmpeg
