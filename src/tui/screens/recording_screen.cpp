@@ -5,6 +5,7 @@
 #include "ftxui/component/screen_interactive.hpp"
 #include "ftxui/dom/elements.hpp"
 
+#include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <string>
@@ -39,6 +40,10 @@ static std::string first_line(const std::string& s) {
     return pos != std::string::npos ? s.substr(0, pos) : s;
 }
 
+// ── Countdown state ──────────────────────────────────────────────────────────
+
+enum class CountdownState { None, Three, Two, One, Go };
+
 // ── Screen ──────────────────────────────────────────────────────────────────
 
 ScreenAction run_recording_screen(core::Project& project,
@@ -54,7 +59,10 @@ ScreenAction run_recording_screen(core::Project& project,
     int  current_idx = std::max(0, std::min(start_index,
                                             static_cast<int>(entries.size()) - 1));
 
-    // Background refresh thread — drives the elapsed-time counter.
+    std::atomic<CountdownState> countdown_state{CountdownState::None};
+    std::jthread countdown_thread;
+
+    // Background refresh thread — drives the elapsed-time counter and countdown.
     std::jthread refresh_thread([&](std::stop_token stop) {
         while (!stop.stop_requested()) {
             screen.PostEvent(Event::Custom);
@@ -62,10 +70,44 @@ ScreenAction run_recording_screen(core::Project& project,
         }
     });
 
+    // Cancel any in-progress countdown (does NOT stop an already-started recording).
+    auto cancel_countdown = [&]() {
+        if (countdown_state.load() != CountdownState::None) {
+            countdown_thread.request_stop();
+            // join so the thread sees the stop before we reassign state
+            countdown_thread = std::jthread{};
+            countdown_state.store(CountdownState::None);
+        }
+    };
+
+    // Begin a 3-2-1-Go! countdown, then open the mic.
+    auto start_countdown = [&](int idx) {
+        auto path = project.takes_dir() /
+                    (std::to_string(entries[idx].index) + ".wav");
+        countdown_state.store(CountdownState::Three);
+        countdown_thread = std::jthread([&, path = std::move(path)](std::stop_token stop) {
+            using namespace std::chrono_literals;
+            auto sleep_or_abort = [&](auto dur) -> bool {
+                std::this_thread::sleep_for(dur);
+                return stop.stop_requested();
+            };
+            if (sleep_or_abort(1s)) { countdown_state.store(CountdownState::None); return; }
+            countdown_state.store(CountdownState::Two);
+            if (sleep_or_abort(1s)) { countdown_state.store(CountdownState::None); return; }
+            countdown_state.store(CountdownState::One);
+            if (sleep_or_abort(1s)) { countdown_state.store(CountdownState::None); return; }
+            countdown_state.store(CountdownState::Go);
+            if (sleep_or_abort(300ms)) { countdown_state.store(CountdownState::None); return; }
+            countdown_state.store(CountdownState::None);
+            recorder.start(path);
+        });
+    };
+
     auto renderer = Renderer([&]() -> Element {
-        const auto& entry = entries[current_idx];
-        const bool  rec   = recorder.is_recording();
-        const int   total = static_cast<int>(entries.size());
+        const auto& entry  = entries[current_idx];
+        const bool  rec    = recorder.is_recording();
+        const int   total  = static_cast<int>(entries.size());
+        const auto  cstate = countdown_state.load();
 
         // ── Top bar ──────────────────────────────────────────────────────
         Elements bar;
@@ -80,6 +122,8 @@ ScreenAction run_recording_screen(core::Project& project,
             } else {
                 bar.push_back(bold(color(Color::Red, text(" ●REC "))));
             }
+        } else if (cstate != CountdownState::None) {
+            bar.push_back(dim(text(" counting… ")));
         } else {
             bar.push_back(dim(text(" ●    ")));
         }
@@ -99,16 +143,28 @@ ScreenAction run_recording_screen(core::Project& project,
                 ? truncate_to(first_line(entries[current_idx + 1].text), 32)
                 : std::string{};
 
-        // ── Status badge (bottom-left of subtitle box) ───────────────────
+        // ── Status badge ─────────────────────────────────────────────────
         std::string status_str{core::take_status_to_string(entry.status)};
 
-        return border(vbox({
-            // top bar
-            hbox(bar),
-            separator(),
-
-            // subtitle body
-            vbox({
+        // ── Body: countdown overlay or normal subtitle view ───────────────
+        Element body;
+        if (cstate != CountdownState::None) {
+            Element count_elem;
+            if (cstate == CountdownState::Go) {
+                count_elem = bold(color(Color::Green, text("Go!")));
+            } else {
+                const char* label =
+                    cstate == CountdownState::Three ? "3" :
+                    cstate == CountdownState::Two   ? "2" : "1";
+                count_elem = bold(text(label));
+            }
+            body = vbox({
+                filler(),
+                hbox({filler(), count_elem | size(WIDTH, GREATER_THAN, 3), filler()}),
+                filler(),
+            }) | flex;
+        } else {
+            body = vbox({
                 text(""),
                 paragraphAlignCenter("\"" + display_text + "\"") | bold,
                 text(""),
@@ -119,7 +175,16 @@ ScreenAction run_recording_screen(core::Project& project,
                 }),
                 text(""),
                 hbox({filler(), dim(text(" " + status_str + " "))}),
-            }) | flex,
+            }) | flex;
+        }
+
+        return border(vbox({
+            // top bar
+            hbox(bar),
+            separator(),
+
+            // body (countdown overlay or subtitle)
+            body,
 
             separator(),
             // key hints
@@ -133,16 +198,13 @@ ScreenAction run_recording_screen(core::Project& project,
         const auto ch = event.character();
 
         if (ch == "r") {
-            if (!recorder.is_recording()) {
-                auto& e    = entries[current_idx];
-                auto  path = project.takes_dir() /
-                             (std::to_string(e.index) + ".wav");
-                recorder.start(path);
-            }
+            if (!recorder.is_recording() && countdown_state.load() == CountdownState::None)
+                start_countdown(current_idx);
             return true;
         }
 
         if (ch == "s") {
+            cancel_countdown();
             if (recorder.is_recording()) {
                 recorder.stop();
                 auto& e = entries[current_idx];
@@ -155,7 +217,7 @@ ScreenAction run_recording_screen(core::Project& project,
         }
 
         if (ch == "p") {
-            if (!recorder.is_recording()) {
+            if (!recorder.is_recording() && countdown_state.load() == CountdownState::None) {
                 const auto& e = entries[current_idx];
                 if (!e.raw_take_path.empty())
                     player.play(e.raw_take_path);
@@ -164,7 +226,8 @@ ScreenAction run_recording_screen(core::Project& project,
         }
 
         if (ch == "x") {
-            // Redo: stop any ongoing recording, clear take.
+            // Redo: cancel countdown, stop any ongoing recording, clear take.
+            cancel_countdown();
             if (recorder.is_recording()) recorder.stop();
             player.stop();
             auto& e = entries[current_idx];
@@ -178,6 +241,7 @@ ScreenAction run_recording_screen(core::Project& project,
         }
 
         if (ch == "n") {
+            cancel_countdown();
             if (recorder.is_recording()) { recorder.stop(); project.save(); }
             player.stop();
             if (current_idx + 1 < static_cast<int>(entries.size()))
@@ -186,6 +250,7 @@ ScreenAction run_recording_screen(core::Project& project,
         }
 
         if (ch == "b") {
+            cancel_countdown();
             if (recorder.is_recording()) { recorder.stop(); project.save(); }
             player.stop();
             if (current_idx > 0) --current_idx;
@@ -193,6 +258,7 @@ ScreenAction run_recording_screen(core::Project& project,
         }
 
         if (ch == "q") {
+            cancel_countdown();
             if (recorder.is_recording()) { recorder.stop(); project.save(); }
             player.stop();
             action = ScreenAction::GoSession;
