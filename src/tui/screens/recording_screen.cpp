@@ -98,8 +98,8 @@ ScreenAction run_recording_screen(core::Project& project,
             if (sleep_or_abort(1s)) { countdown_state.store(CountdownState::None); return; }
             countdown_state.store(CountdownState::One);
             if (sleep_or_abort(1s)) { countdown_state.store(CountdownState::None); return; }
-            countdown_state.store(CountdownState::Go);
             recorder.set_capture_active(true); // WAV writing starts NOW
+            countdown_state.store(CountdownState::Go);
             if (sleep_or_abort(300ms)) { countdown_state.store(CountdownState::None); return; }
             countdown_state.store(CountdownState::None);
         });

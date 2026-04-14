@@ -34,9 +34,9 @@ public:
 
 private:
     // Samples to discard after device start to let the device (and Bluetooth
-    // profile switch) settle before writing audio. 1500 ms at 44100 Hz
-    // (AirPods Max HFP profile switch requires ~1s+ to stabilise).
-    static constexpr unsigned int kWarmupSamples = 44100 * 3 / 2;
+    // profile switch) settle before writing audio. 2500 ms at 44100 Hz
+    // (AirPods Max HFP profile switch requires up to ~2s to stabilise).
+    static constexpr unsigned int kWarmupSamples = 44100 * 5 / 2;
 
     int         m_device_index {-1};
 
