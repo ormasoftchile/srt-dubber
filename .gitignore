@@ -1,10 +1,7 @@
-# Squad: ignore runtime state (logs, inbox, sessions)
-.squad/orchestration-log/
-.squad/log/
-.squad/decisions/inbox/
-.squad/sessions/
-# Squad: SubSquad activation file (local to this machine)
+# Squad (local only — never committed)
+.squad/
 .squad-workstream
+.gitattributes
 
 # Build artefacts
 build/
