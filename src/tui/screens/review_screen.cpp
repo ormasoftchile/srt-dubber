@@ -49,7 +49,9 @@ ScreenAction run_review_screen(core::Project& project,
     auto renderer = Renderer([&]() -> Element {
         auto rs = core::review_render_state(review_state, entries);
 
+        // Header: 3-char prefix aligns with "  › " / "    " row prefixes
         auto header = hbox({
+            text("   "),
             dim(text("  IDX ")),
             dim(text("  TEXT PREVIEW                    ")),
             dim(text("  SLOT  ")),
@@ -74,25 +76,38 @@ ScreenAction run_review_screen(core::Project& project,
                 text("  "),
             });
 
-            if (i == rs.selected_idx)
-                rows.push_back(row | inverted | focus);
-            else
-                rows.push_back(row);
+            if (i == rs.selected_idx) {
+                rows.push_back(hbox({
+                    color(Color::Cyan, text(" \xe2\x80\xba ")),
+                    bold(row),
+                }) | focus);
+            } else {
+                rows.push_back(hbox({
+                    text("   "),
+                    dim(row),
+                }));
+            }
         }
 
         auto list = vbox(rows) | yframe | flex;
 
-        return border(vbox({
-            hbox({bold(text("  Review")),
-                  dim(text("  (" + std::to_string(rs.total) + " entries)")),
-                  filler()}),
-            separator(),
+        return borderRounded(vbox({
+            text(""),
+            hbox({
+                text("  "), bold(text("Review")),
+                dim(text("  " + std::to_string(rs.total) + " entries")),
+                filler(),
+            }),
+            text(""),
             header,
-            separator(),
             list,
-            separator(),
-            hbox({text("  [\xe2\x86\x91/\xe2\x86\x93] navigate  [enter/r] redo  [p] play take  [q/b] back"),
-                  filler()}),
+            text(""),
+            hbox({
+                text("  "),
+                dim(text("\xe2\x86\x91/\xe2\x86\x93 navigate  \xc2\xb7  enter/r redo  \xc2\xb7  p play  \xc2\xb7  q/b back")),
+                filler(),
+            }),
+            text(""),
         }));
     });
 

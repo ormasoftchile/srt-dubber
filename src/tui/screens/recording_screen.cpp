@@ -221,7 +221,7 @@ ScreenAction run_recording_screen(core::Project& project,
             }) | flex;
         }
 
-        return border(vbox({
+        return borderRounded(vbox({
             // top bar
             hbox(bar),
             separator(),
@@ -229,10 +229,14 @@ ScreenAction run_recording_screen(core::Project& project,
             // body (countdown overlay or subtitle)
             body,
 
-            separator(),
-            // key hints
-            hbox({text("  [r]record  [s]stop  [p]play  [x]redo"), filler()}),
-            hbox({text("  [n]next    [b]back  [q]save&quit"),      filler()}),
+            text(""),
+            // key hints — single dim line
+            hbox({
+                text("  "),
+                dim(text("r record  s stop  p play  x redo  n next  b back  q quit")),
+                filler(),
+            }),
+            text(""),
         }));
     });
 

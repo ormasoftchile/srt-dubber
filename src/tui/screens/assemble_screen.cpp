@@ -153,36 +153,42 @@ ScreenAction run_assemble_screen(core::Project& project,
         Elements lines;
         lines.reserve(rs.log_lines.size() + 1);
         for (const auto& line : rs.log_lines)
-            lines.push_back(text("  " + line));
+            lines.push_back(dim(text("  " + line)));
         if (lines.empty())
             lines.push_back(dim(text("  (starting…)")));
 
         Element footer;
         if (rs.phase_label == "complete") {
             footer = vbox({
-                color(Color::Green, text("  " + rs.footer)),
-                separator(),
-                hbox({text("  [q] back"), filler()}),
+                text(""),
+                color(Color::Green, hbox({text("  "), text(rs.footer)})),
+                text(""),
+                hbox({text("  "), dim(text("q  back")), filler()}),
+                text(""),
             });
         } else if (rs.phase_label == "failed") {
             footer = vbox({
-                color(Color::Red, text("  Assembly failed — see log above.")),
-                separator(),
-                hbox({text("  [q] back"), filler()}),
+                text(""),
+                color(Color::Red, hbox({text("  "), text("Assembly failed — see log above.")})),
+                text(""),
+                hbox({text("  "), dim(text("q  back")), filler()}),
+                text(""),
             });
         } else {
             footer = vbox({
-                dim(text("  " + rs.footer)),
-                separator(),
-                hbox({text("  [q] back"), filler()}),
+                text(""),
+                hbox({text("  "), dim(text(rs.footer))}),
+                text(""),
+                hbox({text("  "), dim(text("q  back")), filler()}),
+                text(""),
             });
         }
 
-        return border(vbox({
-            hbox({bold(text("  Assemble")), filler()}),
-            separator(),
+        return borderRounded(vbox({
+            text(""),
+            hbox({text("  "), bold(text("Assemble")), filler()}),
+            text(""),
             vbox(lines) | yframe | flex,
-            separator(),
             footer,
         }));
     });

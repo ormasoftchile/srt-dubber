@@ -41,10 +41,11 @@ ScreenAction run_session_screen(core::Project& project) {
             });
         };
 
-        return border(vbox({
+        return borderRounded(vbox({
             // ── Title ────────────────────────────────────────────────
+            text(""),
             hbox({text("  "), bold(text(title)), filler()}),
-            separator(),
+            text(""),
 
             // ── Stats ────────────────────────────────────────────────
             hbox({
@@ -54,18 +55,14 @@ ScreenAction run_session_screen(core::Project& project) {
                 stat("processed: ", processed), text("   "),
                 stat("overflow: ",  overflow),  filler(),
             }),
-            separator(),
 
             // ── Menu ─────────────────────────────────────────────────
             text(""),
-            hbox({
-                text("  "),
-                text("[r] "), bold(text("Record")),    text("    "),
-                text("[v] "), bold(text("Review")),    text("    "),
-                text("[a] "), bold(text("Assemble")),  text("    "),
-                text("[q] "), bold(text("Quit")),
-                filler(),
-            }),
+            text(""),
+            hbox({text("  "), dim(text("r")), text("  record"),   filler()}),
+            hbox({text("  "), dim(text("v")), text("  review"),   filler()}),
+            hbox({text("  "), dim(text("a")), text("  assemble"), filler()}),
+            hbox({text("  "), dim(text("q")), text("  quit"),     filler()}),
             text(""),
         }));
     });
