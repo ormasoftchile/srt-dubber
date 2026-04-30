@@ -8,9 +8,9 @@
 namespace tui {
 
 /// Screen 4 — assembly progress log.
-/// Launches the assembly thread internally, streams progress into
-/// project.assemble_log, and flips project.assemble_complete when done.
-/// Keys: [q] back to session
+/// Wired to core::AssembleFlow state machine. Auto-starts assembly on entry.
+/// Assembly thread posts commands via a shared queue; renderer reads from
+/// assemble_render_state(). Keys: [q] back to session
 ScreenAction run_assemble_screen(core::Project& project,
                                  const std::filesystem::path& video_path);
 

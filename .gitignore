@@ -37,3 +37,4 @@ project.json
 .idea/
 *.swp
 *.swo
+.copilot/mcp-config.json

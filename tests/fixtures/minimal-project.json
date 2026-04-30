@@ -1,0 +1,14 @@
+[
+  {
+    "index": 1,
+    "start_ms": 1000,
+    "end_ms": 3000,
+    "slot_duration_ms": 2000,
+    "text": "Hello world",
+    "raw_take_path": "tests/fixtures/takes/1.wav",
+    "processed_take_path": "",
+    "raw_duration_ms": -1,
+    "processed_duration_ms": -1,
+    "status": "pending"
+  }
+]

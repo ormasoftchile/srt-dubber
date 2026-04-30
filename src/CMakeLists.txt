@@ -2,6 +2,12 @@ add_library(srt_dubber_lib STATIC
   srt/parser.cpp
   core/project.cpp
   core/resync.cpp
+  core/recording_flow.cpp
+  core/assemble_flow.cpp
+  core/effect_dispatcher.cpp
+  core/review_flow.cpp
+  core/review_effect_dispatcher.cpp
+  core/app_session.cpp
   audio/recorder.cpp
   audio/player.cpp
   ffmpeg/processor.cpp
