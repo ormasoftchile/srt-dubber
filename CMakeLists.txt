@@ -1,6 +1,16 @@
 cmake_minimum_required(VERSION 3.20)
 project(srt-dubber VERSION 0.1.0 LANGUAGES CXX)
 
+# Install git hooks so secret scanning runs before every commit.
+# Safe to run repeatedly; skipped in CI (no .git dir).
+if(EXISTS "${CMAKE_SOURCE_DIR}/.git")
+  execute_process(
+    COMMAND git config core.hooksPath .githooks
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+  )
+  message(STATUS "Git hooks configured (core.hooksPath = .githooks)")
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)

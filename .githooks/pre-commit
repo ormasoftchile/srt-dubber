@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Pre-commit hook: block commits with secrets or gitignored files.
+# Activated automatically by CMake (core.hooksPath = .githooks).
+
+set -euo pipefail
+
+FAILED=0
+
+# ── 1. Block files that must never be committed ─────────────────────────────
+BLOCKED_PATHS=(
+  ".squad/"
+  ".copilot/mcp-config.json"
+)
+
+for path in "${BLOCKED_PATHS[@]}"; do
+  if git diff --cached --name-only | grep -q "^${path}"; then
+    echo "❌ pre-commit: blocked path staged: ${path}"
+    echo "   Remove it with: git rm -r --cached ${path}"
+    FAILED=1
+  fi
+done
+
+# ── 2. Scan staged content for secret patterns ───────────────────────────────
+# Patterns: real token prefixes only (not example/placeholder text)
+SECRET_PATTERNS=(
+  'ghp_[A-Za-z0-9]{36}'           # GitHub personal access token
+  'ghs_[A-Za-z0-9]{36}'           # GitHub app installation token
+  'github_pat_[A-Za-z0-9_]{82}'   # GitHub fine-grained PAT
+  'sk-[A-Za-z0-9]{48}'            # OpenAI API key
+  'AKIA[0-9A-Z]{16}'              # AWS access key
+  'ya29\.[A-Za-z0-9._-]+'         # Google OAuth token
+)
+
+STAGED_DIFF=$(git diff --cached --unified=0)
+
+for pattern in "${SECRET_PATTERNS[@]}"; do
+  if echo "$STAGED_DIFF" | grep -qE "^\+.*${pattern}"; then
+    match=$(echo "$STAGED_DIFF" | grep -oE "^\+.*${pattern}" | head -1)
+    echo "❌ pre-commit: potential secret detected (pattern: ${pattern})"
+    echo "   Line: ${match}"
+    FAILED=1
+  fi
+done
+
+if [ "$FAILED" -ne 0 ]; then
+  echo ""
+  echo "Commit blocked. Fix the issues above and try again."
+  exit 1
+fi
