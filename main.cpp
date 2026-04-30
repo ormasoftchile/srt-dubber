@@ -10,21 +10,36 @@
 
 static constexpr const char* kVersion = "0.1.0";
 
+static void print_help() {
+    std::cout <<
+        "srt-dubber " << kVersion << "\n"
+        "Voice-over dubbing tool for SRT subtitle files.\n"
+        "\n"
+        "USAGE:\n"
+        "  srt-dubber [OPTIONS] <input.srt> [video.mp4]\n"
+        "  srt-dubber [OPTIONS] --resync <new.srt>\n"
+        "\n"
+        "ARGUMENTS:\n"
+        "  <input.srt>   Path to the SRT subtitle file (required)\n"
+        "  [video.mp4]   Optional reference video for playback\n"
+        "\n"
+        "OPTIONS:\n"
+        "  --device N        Select audio input device by index (see --list-devices)\n"
+        "  --resync <new.srt> Re-sync an existing project to a new SRT file\n"
+        "  --list-devices    List available audio input devices and exit\n"
+        "  --version         Print version and exit\n"
+        "  --help, -h        Show this help and exit\n"
+        "\n"
+        "EXAMPLES:\n"
+        "  srt-dubber subtitles.srt\n"
+        "  srt-dubber subtitles.srt reference.mp4\n"
+        "  srt-dubber --device 2 subtitles.srt\n"
+        "  srt-dubber --resync updated.srt\n";
+}
+
 int main(int argc, char* argv[]) {
-    if (argc == 2 && std::string(argv[1]) == "--help") {
-        std::cout << "srt-dubber " << kVersion << "\n\n"
-                  << "Usage:\n"
-                  << "  srt-dubber [--device N] <input.srt> [video.mp4]\n"
-                  << "  srt-dubber [--device N] --resync new.srt\n"
-                  << "  srt-dubber --list-devices\n"
-                  << "  srt-dubber --version\n"
-                  << "  srt-dubber --help\n\n"
-                  << "Options:\n"
-                  << "  --device N       Use audio device at index N\n"
-                  << "  --resync new.srt Re-sync existing project to updated SRT\n"
-                  << "  --list-devices   List available audio devices\n"
-                  << "  --version        Show version\n"
-                  << "  --help           Show this help message\n";
+    if (argc == 2 && (std::string(argv[1]) == "--help" || std::string(argv[1]) == "-h")) {
+        print_help();
         return 0;
     }
 
