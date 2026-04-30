@@ -6,6 +6,14 @@ set -euo pipefail
 
 FAILED=0
 
+# ── 0. Block direct commits to main ─────────────────────────────────────────
+BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || echo "detached")
+if [ "$BRANCH" = "main" ]; then
+  echo "❌ pre-commit: direct commits to 'main' are not allowed."
+  echo "   Create a feature branch: git checkout -b copilot/<your-topic>"
+  exit 1
+fi
+
 # ── 1. Block files that must never be committed ─────────────────────────────
 BLOCKED_PATHS=(
   ".squad/"
