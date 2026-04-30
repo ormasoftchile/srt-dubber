@@ -1,4 +1,5 @@
 #include "core/recording_flow.hpp"
+#include "core/recording_effects.hpp"
 #include <nlohmann/json.hpp>
 #include <iostream>
 #include <string>
@@ -110,30 +111,71 @@ int main(int argc, char** argv) {
             if (cmd == RecordingCmd::Next || cmd == RecordingCmd::Back) {
                 state.has_take = false;
             }
-            // Simulate take creation on stop_recording
-            if (transition.effects.stop_recording) {
-                state.has_take = true;
+            // Simulate take creation on StopRecording
+            bool has_stop_recording = false;
+            bool has_clear_take = false;
+            bool has_exit = false;
+            for (const auto& eff : transition.effects) {
+                if (std::holds_alternative<core::StopRecording>(eff)) has_stop_recording = true;
+                if (std::holds_alternative<core::ClearTake>(eff))     has_clear_take = true;
+                if (std::holds_alternative<core::ExitToSession>(eff)) has_exit = true;
             }
-            // Clear take on redo
-            if (transition.effects.clear_take) {
-                state.has_take = false;
+            if (has_stop_recording) state.has_take = true;
+            if (has_clear_take)     state.has_take = false;
+
+            // Build effects array for JSON output
+            std::string effects_json = "[";
+            bool first_eff = true;
+            for (const auto& eff : transition.effects) {
+                if (!first_eff) effects_json += ",";
+                first_eff = false;
+                std::visit([&](const auto& e) {
+                    using T = std::decay_t<decltype(e)>;
+                    if constexpr (std::is_same_v<T, core::StartCountdown>)    effects_json += "\"StartCountdown\"";
+                    else if constexpr (std::is_same_v<T, core::CancelCountdown>) effects_json += "\"CancelCountdown\"";
+                    else if constexpr (std::is_same_v<T, core::ActivateCapture>) effects_json += "\"ActivateCapture\"";
+                    else if constexpr (std::is_same_v<T, core::StopRecording>)   effects_json += "\"StopRecording\"";
+                    else if constexpr (std::is_same_v<T, core::PlayTake>)        effects_json += "\"PlayTake\"";
+                    else if constexpr (std::is_same_v<T, core::StopPlayback>)    effects_json += "\"StopPlayback\"";
+                    else if constexpr (std::is_same_v<T, core::SaveTake>)        effects_json += "\"SaveTake\"";
+                    else if constexpr (std::is_same_v<T, core::ClearTake>)       effects_json += "\"ClearTake\"";
+                    else if constexpr (std::is_same_v<T, core::SaveProject>)     effects_json += "\"SaveProject\"";
+                    else if constexpr (std::is_same_v<T, core::ExitToSession>)   effects_json += "\"ExitToSession\"";
+                }, eff);
             }
+            effects_json += "]";
 
             // Check for exit
-            if (transition.effects.exit_to_session) {
-                json final_state = {
-                    {"current_idx", state.current_idx},
-                    {"total", state.total},
-                    {"phase", phase_to_string(state.phase)},
-                    {"has_take", state.has_take},
-                    {"exit", true}
-                };
-                std::cout << final_state.dump(2) << std::endl;
+            if (has_exit) {
+                std::cout << "{\"current_idx\":" << state.current_idx
+                          << ",\"total\":" << state.total
+                          << ",\"phase\":\"" << phase_to_string(state.phase) << "\""
+                          << ",\"has_take\":" << (state.has_take ? "true" : "false")
+                          << ",\"effects\":" << effects_json
+                          << ",\"exit\":true}" << std::endl;
                 return 0;
             }
 
-            // Emit new state
-            emit_state(state, entries);
+            // Emit new state with effects
+            const auto& entry = entries[state.current_idx];
+            json out = {
+                {"current_idx", state.current_idx},
+                {"total", state.total},
+                {"phase", phase_to_string(state.phase)},
+                {"has_take", state.has_take},
+                {"entry", {
+                    {"index", entry.index},
+                    {"text", entry.text},
+                    {"start_ms", entry.start_ms},
+                    {"end_ms", entry.end_ms},
+                    {"slot_duration_ms", entry.slot_duration_ms},
+                    {"status", entry.status}
+                }}
+            };
+            std::string out_str = out.dump(2);
+            // Insert effects before closing brace
+            out_str.insert(out_str.rfind('}'), ",\n  \"effects\": " + effects_json + "\n");
+            std::cout << out_str << std::endl;
 
         } catch (const json::exception& e) {
             json err = {{"error", std::string("JSON parse error: ") + e.what()}};

@@ -1,6 +1,7 @@
 #include "tui/screens/recording_screen.hpp"
 
 #include "core/recording_flow.hpp"
+#include "core/recording_effects.hpp"
 #include "ftxui/component/component.hpp"
 #include "ftxui/component/event.hpp"
 #include "ftxui/component/screen_interactive.hpp"
@@ -120,7 +121,8 @@ ScreenAction run_recording_screen(core::Project& project,
     };
 
     // Helper to apply effects from state machine
-    auto apply_effects = [&](const core::FlowEffects& fx) {
+    auto apply_effects = [&](const std::vector<core::RecordingEffect>& variant_effects) {
+        auto fx = core::FlowEffects::from_variants(variant_effects); // TODO(Slice4): remove
         if (fx.cancel_countdown) {
             cancel_countdown();
         }

@@ -1,4 +1,5 @@
 #include "core/recording_flow.hpp"
+#include "core/recording_effects.hpp"
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -34,6 +35,15 @@ static void run_test(const char* name, void (*fn)()) {
     fn();
 }
 
+// Helper: check whether a specific effect type is present in the effects list
+template <typename T>
+static bool has_effect(const std::vector<core::RecordingEffect>& effects) {
+    for (const auto& e : effects) {
+        if (std::holds_alternative<T>(e)) return true;
+    }
+    return false;
+}
+
 using namespace core;
 
 // Test cases
@@ -42,75 +52,75 @@ static void test_record_from_idle() {
     FlowState s{.current_idx = 0, .total = 3, .phase = FlowPhase::Idle, .has_take = false};
     auto t = recording_step(s, RecordingCmd::Record);
     ASSERT_EQ(t.next.phase, FlowPhase::Countdown);
-    ASSERT_TRUE(t.effects.start_countdown);
-    ASSERT_FALSE(t.effects.cancel_countdown);
+    ASSERT_TRUE(has_effect<core::StartCountdown>(t.effects));
+    ASSERT_FALSE(has_effect<core::CancelCountdown>(t.effects));
 }
 
 static void test_record_ignored_in_countdown() {
     FlowState s{.current_idx = 0, .total = 3, .phase = FlowPhase::Countdown, .has_take = false};
     auto t = recording_step(s, RecordingCmd::Record);
     ASSERT_EQ(t.next.phase, FlowPhase::Countdown);
-    ASSERT_FALSE(t.effects.start_countdown);
+    ASSERT_FALSE(has_effect<core::StartCountdown>(t.effects));
 }
 
 static void test_record_ignored_in_recording() {
     FlowState s{.current_idx = 0, .total = 3, .phase = FlowPhase::Recording, .has_take = false};
     auto t = recording_step(s, RecordingCmd::Record);
     ASSERT_EQ(t.next.phase, FlowPhase::Recording);
-    ASSERT_FALSE(t.effects.start_countdown);
+    ASSERT_FALSE(has_effect<core::StartCountdown>(t.effects));
 }
 
 static void test_stop_cancels_countdown() {
     FlowState s{.current_idx = 0, .total = 3, .phase = FlowPhase::Countdown, .has_take = false};
     auto t = recording_step(s, RecordingCmd::Stop);
     ASSERT_EQ(t.next.phase, FlowPhase::Idle);
-    ASSERT_TRUE(t.effects.cancel_countdown);
-    ASSERT_FALSE(t.effects.stop_recording);
+    ASSERT_TRUE(has_effect<core::CancelCountdown>(t.effects));
+    ASSERT_FALSE(has_effect<core::StopRecording>(t.effects));
 }
 
 static void test_stop_stops_recording() {
     FlowState s{.current_idx = 0, .total = 3, .phase = FlowPhase::Recording, .has_take = false};
     auto t = recording_step(s, RecordingCmd::Stop);
     ASSERT_EQ(t.next.phase, FlowPhase::Idle);
-    ASSERT_TRUE(t.effects.stop_recording);
-    ASSERT_FALSE(t.effects.cancel_countdown);
+    ASSERT_TRUE(has_effect<core::StopRecording>(t.effects));
+    ASSERT_FALSE(has_effect<core::CancelCountdown>(t.effects));
 }
 
 static void test_stop_noop_in_idle() {
     FlowState s{.current_idx = 0, .total = 3, .phase = FlowPhase::Idle, .has_take = false};
     auto t = recording_step(s, RecordingCmd::Stop);
     ASSERT_EQ(t.next.phase, FlowPhase::Idle);
-    ASSERT_FALSE(t.effects.cancel_countdown);
-    ASSERT_FALSE(t.effects.stop_recording);
+    ASSERT_FALSE(has_effect<core::CancelCountdown>(t.effects));
+    ASSERT_FALSE(has_effect<core::StopRecording>(t.effects));
 }
 
 static void test_play_with_take() {
     FlowState s{.current_idx = 0, .total = 3, .phase = FlowPhase::Idle, .has_take = true};
     auto t = recording_step(s, RecordingCmd::Play);
     ASSERT_EQ(t.next.phase, FlowPhase::Idle);
-    ASSERT_TRUE(t.effects.play_take);
+    ASSERT_TRUE(has_effect<core::PlayTake>(t.effects));
 }
 
 static void test_play_without_take() {
     FlowState s{.current_idx = 0, .total = 3, .phase = FlowPhase::Idle, .has_take = false};
     auto t = recording_step(s, RecordingCmd::Play);
     ASSERT_EQ(t.next.phase, FlowPhase::Idle);
-    ASSERT_FALSE(t.effects.play_take);
+    ASSERT_FALSE(has_effect<core::PlayTake>(t.effects));
 }
 
 static void test_play_ignored_in_countdown() {
     FlowState s{.current_idx = 0, .total = 3, .phase = FlowPhase::Countdown, .has_take = true};
     auto t = recording_step(s, RecordingCmd::Play);
     ASSERT_EQ(t.next.phase, FlowPhase::Countdown);
-    ASSERT_FALSE(t.effects.play_take);
+    ASSERT_FALSE(has_effect<core::PlayTake>(t.effects));
 }
 
 static void test_redo_from_idle() {
     FlowState s{.current_idx = 0, .total = 3, .phase = FlowPhase::Idle, .has_take = true};
     auto t = recording_step(s, RecordingCmd::Redo);
     ASSERT_EQ(t.next.phase, FlowPhase::Idle);
-    ASSERT_TRUE(t.effects.clear_take);
-    ASSERT_TRUE(t.effects.stop_playback);
+    ASSERT_TRUE(has_effect<core::ClearTake>(t.effects));
+    ASSERT_TRUE(has_effect<core::StopPlayback>(t.effects));
     ASSERT_FALSE(t.next.has_take);
 }
 
@@ -118,18 +128,18 @@ static void test_redo_from_countdown() {
     FlowState s{.current_idx = 0, .total = 3, .phase = FlowPhase::Countdown, .has_take = false};
     auto t = recording_step(s, RecordingCmd::Redo);
     ASSERT_EQ(t.next.phase, FlowPhase::Idle);
-    ASSERT_TRUE(t.effects.cancel_countdown);
-    ASSERT_TRUE(t.effects.clear_take);
-    ASSERT_TRUE(t.effects.stop_playback);
+    ASSERT_TRUE(has_effect<core::CancelCountdown>(t.effects));
+    ASSERT_TRUE(has_effect<core::ClearTake>(t.effects));
+    ASSERT_TRUE(has_effect<core::StopPlayback>(t.effects));
 }
 
 static void test_redo_from_recording() {
     FlowState s{.current_idx = 0, .total = 3, .phase = FlowPhase::Recording, .has_take = false};
     auto t = recording_step(s, RecordingCmd::Redo);
     ASSERT_EQ(t.next.phase, FlowPhase::Idle);
-    ASSERT_TRUE(t.effects.stop_recording);
-    ASSERT_TRUE(t.effects.clear_take);
-    ASSERT_TRUE(t.effects.stop_playback);
+    ASSERT_TRUE(has_effect<core::StopRecording>(t.effects));
+    ASSERT_TRUE(has_effect<core::ClearTake>(t.effects));
+    ASSERT_TRUE(has_effect<core::StopPlayback>(t.effects));
 }
 
 static void test_next_advances_index() {
@@ -137,7 +147,7 @@ static void test_next_advances_index() {
     auto t = recording_step(s, RecordingCmd::Next);
     ASSERT_EQ(t.next.phase, FlowPhase::Idle);
     ASSERT_EQ(t.next.current_idx, 1);
-    ASSERT_TRUE(t.effects.stop_playback);
+    ASSERT_TRUE(has_effect<core::StopPlayback>(t.effects));
 }
 
 static void test_next_at_end_stays() {
@@ -151,7 +161,7 @@ static void test_back_retreats_index() {
     auto t = recording_step(s, RecordingCmd::Back);
     ASSERT_EQ(t.next.phase, FlowPhase::Idle);
     ASSERT_EQ(t.next.current_idx, 0);
-    ASSERT_TRUE(t.effects.stop_playback);
+    ASSERT_TRUE(has_effect<core::StopPlayback>(t.effects));
 }
 
 static void test_back_at_start_stays() {
@@ -164,7 +174,7 @@ static void test_next_stops_recording() {
     FlowState s{.current_idx = 0, .total = 3, .phase = FlowPhase::Recording, .has_take = false};
     auto t = recording_step(s, RecordingCmd::Next);
     ASSERT_EQ(t.next.phase, FlowPhase::Idle);
-    ASSERT_TRUE(t.effects.stop_recording);
+    ASSERT_TRUE(has_effect<core::StopRecording>(t.effects));
     ASSERT_EQ(t.next.current_idx, 1);
 }
 
@@ -172,22 +182,22 @@ static void test_quit_from_recording() {
     FlowState s{.current_idx = 0, .total = 3, .phase = FlowPhase::Recording, .has_take = false};
     auto t = recording_step(s, RecordingCmd::Quit);
     ASSERT_EQ(t.next.phase, FlowPhase::Idle);
-    ASSERT_TRUE(t.effects.stop_recording);
-    ASSERT_TRUE(t.effects.exit_to_session);
+    ASSERT_TRUE(has_effect<core::StopRecording>(t.effects));
+    ASSERT_TRUE(has_effect<core::ExitToSession>(t.effects));
 }
 
 static void test_countdown_complete() {
     FlowState s{.current_idx = 0, .total = 3, .phase = FlowPhase::Countdown, .has_take = false};
     auto t = recording_step(s, RecordingCmd::CountdownComplete);
     ASSERT_EQ(t.next.phase, FlowPhase::Recording);
-    ASSERT_TRUE(t.effects.activate_capture);
+    ASSERT_TRUE(has_effect<core::ActivateCapture>(t.effects));
 }
 
 static void test_countdown_complete_ignored_in_idle() {
     FlowState s{.current_idx = 0, .total = 3, .phase = FlowPhase::Idle, .has_take = false};
     auto t = recording_step(s, RecordingCmd::CountdownComplete);
     ASSERT_EQ(t.next.phase, FlowPhase::Idle);
-    ASSERT_FALSE(t.effects.activate_capture);
+    ASSERT_FALSE(has_effect<core::ActivateCapture>(t.effects));
 }
 
 static void test_unknown_key() {

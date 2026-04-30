@@ -1,4 +1,6 @@
 #pragma once
+#include "recording_effects.hpp"
+#include "recording_render_state.hpp"
 #include <optional>
 #include <string>
 
@@ -33,21 +35,10 @@ struct FlowState {
 };
 
 /// Side-effects the caller must apply after a transition.
-/// Multiple flags may be set simultaneously.
-struct FlowEffects {
-    bool start_countdown  = false; ///< open recorder + begin 3-2-1 timer
-    bool cancel_countdown = false; ///< abort countdown thread
-    bool activate_capture = false; ///< recorder.set_capture_active(true) — on CountdownComplete
-    bool stop_recording   = false; ///< recorder.stop() + update entry.raw_take_path + save
-    bool play_take        = false; ///< player.play(current entry's raw_take_path)
-    bool stop_playback    = false; ///< player.stop()
-    bool clear_take       = false; ///< reset entry take fields + save
-    bool exit_to_session  = false; ///< navigate back to Session screen
-};
-
+/// Multiple effects may be present simultaneously.
 struct FlowTransition {
-    FlowState   next;
-    FlowEffects effects;
+    FlowState next;
+    std::vector<RecordingEffect> effects;
 };
 
 /// Pure recording flow state machine. No audio, no TUI, no threads.
@@ -55,5 +46,16 @@ struct FlowTransition {
 /// `has_take` in `state` gates the Play command.
 /// `total` in `state` bounds-checks Next/Back.
 FlowTransition recording_step(FlowState state, RecordingCmd cmd);
+
+/// Build a render snapshot from current flow state + entry data + elapsed timer.
+/// Pure function — no audio, no TUI, no threads.
+/// \param state     current flow state (phase, idx, has_take)
+/// \param text      subtitle text for current entry (pass "" if out of bounds)
+/// \param slot_ms   allocated slot duration in ms (pass 0 if unknown)
+/// \param elapsed   recording elapsed time from AudioRecorder::elapsed_ms() (0 when not recording)
+RecordingRenderState render_state(const FlowState& state,
+                                  const std::string& text,
+                                  int64_t slot_ms,
+                                  int64_t elapsed);
 
 } // namespace core
