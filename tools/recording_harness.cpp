@@ -1,5 +1,6 @@
 #include "core/recording_flow.hpp"
 #include "core/recording_effects.hpp"
+#include "core/recording_render_state.hpp"
 #include <nlohmann/json.hpp>
 #include <iostream>
 #include <string>
@@ -39,11 +40,18 @@ static std::vector<FakeEntry> create_fixture() {
 // Emit current state as JSON
 static void emit_state(const FlowState& state, const std::vector<FakeEntry>& entries) {
     const auto& entry = entries[state.current_idx];
+    auto rs = render_state(state, entry.text, entry.slot_duration_ms, 0);
     json j = {
         {"current_idx", state.current_idx},
         {"total", state.total},
         {"phase", phase_to_string(state.phase)},
         {"has_take", state.has_take},
+        {"render", {
+            {"idx", rs.current_idx},
+            {"total", rs.total},
+            {"phase", rs.phase_label},
+            {"has_take", rs.has_take}
+        }},
         {"entry", {
             {"index", entry.index},
             {"text", entry.text},
@@ -158,11 +166,18 @@ int main(int argc, char** argv) {
 
             // Emit new state with effects
             const auto& entry = entries[state.current_idx];
+            auto rs = render_state(state, entry.text, entry.slot_duration_ms, 0);
             json out = {
                 {"current_idx", state.current_idx},
                 {"total", state.total},
                 {"phase", phase_to_string(state.phase)},
                 {"has_take", state.has_take},
+                {"render", {
+                    {"idx", rs.current_idx},
+                    {"total", rs.total},
+                    {"phase", rs.phase_label},
+                    {"has_take", rs.has_take}
+                }},
                 {"entry", {
                     {"index", entry.index},
                     {"text", entry.text},

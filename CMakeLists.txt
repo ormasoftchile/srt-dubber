@@ -44,6 +44,7 @@ FetchContent_MakeAvailable(json)
 # Core-only library (no TUI, no audio) for harness and tests
 add_library(srt_dubber_core STATIC
   src/core/recording_flow.cpp
+  src/core/assemble_flow.cpp
   src/core/project.cpp
   src/core/resync.cpp
   src/srt/parser.cpp
@@ -73,3 +74,24 @@ target_include_directories(recording-harness PRIVATE ${CMAKE_SOURCE_DIR}/src ${C
 add_executable(recording-flow-tests tests/recording_flow_test.cpp)
 target_link_libraries(recording-flow-tests PRIVATE srt_dubber_core)
 target_include_directories(recording-flow-tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+# Recording render state tests
+add_executable(recording-render-state-tests tests/recording_render_state_test.cpp)
+target_link_libraries(recording-render-state-tests PRIVATE srt_dubber_core)
+target_include_directories(recording-render-state-tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+# Effect dispatcher integration tests (fakes in tests/audio/ replace real audio headers)
+add_executable(effect-dispatcher-tests
+  tests/effect_dispatcher_test.cpp
+  src/core/effect_dispatcher.cpp
+)
+target_link_libraries(effect-dispatcher-tests PRIVATE srt_dubber_core)
+target_include_directories(effect-dispatcher-tests PRIVATE
+  ${CMAKE_SOURCE_DIR}/tests   # stubs (tests/audio/) shadow src/audio/
+  ${CMAKE_SOURCE_DIR}/src
+)
+
+# Assemble flow tests
+add_executable(assemble-flow-tests tests/assemble_flow_test.cpp)
+target_link_libraries(assemble-flow-tests PRIVATE srt_dubber_core)
+target_include_directories(assemble-flow-tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
