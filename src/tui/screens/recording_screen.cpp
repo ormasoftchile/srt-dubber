@@ -1,5 +1,6 @@
 #include "tui/screens/recording_screen.hpp"
 
+#include "core/recording_flow.hpp"
 #include "ftxui/component/component.hpp"
 #include "ftxui/component/event.hpp"
 #include "ftxui/component/screen_interactive.hpp"
@@ -56,11 +57,23 @@ ScreenAction run_recording_screen(core::Project& project,
     auto screen = ScreenInteractive::Fullscreen();
     ScreenAction action = ScreenAction::GoSession;
 
-    int  current_idx = std::max(0, std::min(start_index,
-                                            static_cast<int>(entries.size()) - 1));
+    // Initialize flow state
+    int start_idx = std::max(0, std::min(start_index, static_cast<int>(entries.size()) - 1));
+    core::FlowState flow{
+        .current_idx = start_idx,
+        .total       = static_cast<int>(entries.size()),
+        .phase       = core::FlowPhase::Idle,
+        .has_take    = !entries[start_idx].raw_take_path.empty()
+    };
 
     std::atomic<CountdownState> countdown_state{CountdownState::None};
     std::jthread countdown_thread;
+
+    // Helper to sync flow state from project (call after mutations)
+    auto sync_flow = [&]() {
+        flow.total    = static_cast<int>(entries.size());
+        flow.has_take = !entries[flow.current_idx].raw_take_path.empty();
+    };
 
     // Background refresh thread — drives the elapsed-time counter and countdown.
     std::jthread refresh_thread([&](std::stop_token stop) {
@@ -98,22 +111,64 @@ ScreenAction run_recording_screen(core::Project& project,
             if (sleep_or_abort(1s)) { countdown_state.store(CountdownState::None); return; }
             countdown_state.store(CountdownState::One);
             if (sleep_or_abort(1s)) { countdown_state.store(CountdownState::None); return; }
-            recorder.set_capture_active(true); // WAV writing starts NOW
+            // Signal countdown complete via special event
+            screen.PostEvent(Event::Special("\x01"));
             countdown_state.store(CountdownState::Go);
             if (sleep_or_abort(300ms)) { countdown_state.store(CountdownState::None); return; }
             countdown_state.store(CountdownState::None);
         });
     };
 
+    // Helper to apply effects from state machine
+    auto apply_effects = [&](const core::FlowEffects& fx) {
+        if (fx.cancel_countdown) {
+            cancel_countdown();
+        }
+        if (fx.start_countdown) {
+            start_countdown(flow.current_idx);
+        }
+        if (fx.activate_capture) {
+            recorder.set_capture_active(true);
+        }
+        if (fx.stop_recording) {
+            recorder.stop();
+            auto& e = entries[flow.current_idx];
+            e.raw_take_path = (project.takes_dir() /
+                               (std::to_string(e.index) + ".wav")).string();
+            project.save();
+        }
+        if (fx.play_take) {
+            const auto& e = entries[flow.current_idx];
+            if (!e.raw_take_path.empty())
+                player.play(e.raw_take_path);
+        }
+        if (fx.stop_playback) {
+            player.stop();
+        }
+        if (fx.clear_take) {
+            auto& e = entries[flow.current_idx];
+            e.raw_take_path.clear();
+            e.processed_take_path.clear();
+            e.raw_duration_ms       = -1;
+            e.processed_duration_ms = -1;
+            e.status                = core::TakeStatus::pending;
+            project.save();
+        }
+        if (fx.exit_to_session) {
+            action = ScreenAction::GoSession;
+            screen.ExitLoopClosure()();
+        }
+    };
+
     auto renderer = Renderer([&]() -> Element {
-        const auto& entry  = entries[current_idx];
+        const auto& entry  = entries[flow.current_idx];
         const bool  rec    = recorder.is_recording();
         const int   total  = static_cast<int>(entries.size());
         const auto  cstate = countdown_state.load();
 
         // ── Top bar ──────────────────────────────────────────────────────
         Elements bar;
-        bar.push_back(bold(text(fmt_idx(current_idx + 1, total))));
+        bar.push_back(bold(text(fmt_idx(flow.current_idx + 1, total))));
         bar.push_back(filler());
         bar.push_back(dim(text(" slot: ")));
         bar.push_back(text(fmt_dur_ms(entry.slot_duration_ms) + " "));
@@ -137,12 +192,12 @@ ScreenAction run_recording_screen(core::Project& project,
 
         // ── Context: prev / next ─────────────────────────────────────────
         const std::string prev_preview =
-            current_idx > 0
-                ? truncate_to(first_line(entries[current_idx - 1].text), 32)
+            flow.current_idx > 0
+                ? truncate_to(first_line(entries[flow.current_idx - 1].text), 32)
                 : std::string{};
         const std::string next_preview =
-            (current_idx + 1 < total)
-                ? truncate_to(first_line(entries[current_idx + 1].text), 32)
+            (flow.current_idx + 1 < total)
+                ? truncate_to(first_line(entries[flow.current_idx + 1].text), 32)
                 : std::string{};
 
         // ── Status badge ─────────────────────────────────────────────────
@@ -198,79 +253,30 @@ ScreenAction run_recording_screen(core::Project& project,
     });
 
     auto component = CatchEvent(renderer, [&](Event event) -> bool {
+        // Handle special CountdownComplete event
+        if (event == Event::Special("\x01")) {
+            auto t = core::recording_step(flow, core::RecordingCmd::CountdownComplete);
+            apply_effects(t.effects);
+            flow = t.next;
+            return true;
+        }
+
         if (!event.is_character()) return false;
         const auto ch = event.character();
 
-        if (ch == "r") {
-            if (!recorder.is_recording() && countdown_state.load() == CountdownState::None)
-                start_countdown(current_idx);
-            return true;
-        }
+        // Parse command from key
+        auto cmd_opt = core::parse_recording_cmd(ch);
+        if (!cmd_opt.has_value()) return false;
 
-        if (ch == "s") {
-            cancel_countdown();
-            if (recorder.is_recording()) {
-                recorder.stop();
-                auto& e = entries[current_idx];
-                e.raw_take_path = (project.takes_dir() /
-                                   (std::to_string(e.index) + ".wav")).string();
-                // Status remains pending until ffmpeg processing runs.
-                project.save();
-            }
-            return true;
-        }
-
-        if (ch == "p") {
-            if (!recorder.is_recording() && countdown_state.load() == CountdownState::None) {
-                const auto& e = entries[current_idx];
-                if (!e.raw_take_path.empty())
-                    player.play(e.raw_take_path);
-            }
-            return true;
-        }
-
-        if (ch == "x") {
-            // Redo: cancel countdown, stop any ongoing recording, clear take.
-            cancel_countdown();
-            if (recorder.is_recording()) recorder.stop();
-            player.stop();
-            auto& e = entries[current_idx];
-            e.raw_take_path.clear();
-            e.processed_take_path.clear();
-            e.raw_duration_ms       = -1;
-            e.processed_duration_ms = -1;
-            e.status                = core::TakeStatus::pending;
-            project.save();
-            return true;
-        }
-
-        if (ch == "n") {
-            cancel_countdown();
-            if (recorder.is_recording()) { recorder.stop(); project.save(); }
-            player.stop();
-            if (current_idx + 1 < static_cast<int>(entries.size()))
-                ++current_idx;
-            return true;
-        }
-
-        if (ch == "b") {
-            cancel_countdown();
-            if (recorder.is_recording()) { recorder.stop(); project.save(); }
-            player.stop();
-            if (current_idx > 0) --current_idx;
-            return true;
-        }
-
-        if (ch == "q") {
-            cancel_countdown();
-            if (recorder.is_recording()) { recorder.stop(); project.save(); }
-            player.stop();
-            action = ScreenAction::GoSession;
-            screen.ExitLoopClosure()();
-            return true;
-        }
-
-        return false;
+        auto cmd = cmd_opt.value();
+        
+        // Apply state machine transition
+        auto t = core::recording_step(flow, cmd);
+        apply_effects(t.effects);
+        flow = t.next;
+        sync_flow();
+        
+        return true;
     });
 
     screen.Loop(component);

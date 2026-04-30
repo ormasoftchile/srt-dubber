@@ -41,6 +41,20 @@ FetchContent_Declare(json
 set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(json)
 
+# Core-only library (no TUI, no audio) for harness and tests
+add_library(srt_dubber_core STATIC
+  src/core/recording_flow.cpp
+  src/core/project.cpp
+  src/core/resync.cpp
+  src/srt/parser.cpp
+)
+target_include_directories(srt_dubber_core PUBLIC
+  ${CMAKE_SOURCE_DIR}/src
+  ${CMAKE_SOURCE_DIR}/vendor
+)
+target_link_libraries(srt_dubber_core PUBLIC nlohmann_json::nlohmann_json)
+target_compile_features(srt_dubber_core PUBLIC cxx_std_20)
+
 add_subdirectory(src)
 
 add_executable(srt-dubber main.cpp)
@@ -49,3 +63,13 @@ target_include_directories(srt-dubber PRIVATE
   ${CMAKE_SOURCE_DIR}/src
   ${CMAKE_SOURCE_DIR}/vendor
 )
+
+# Turn-based harness
+add_executable(recording-harness tools/recording_harness.cpp)
+target_link_libraries(recording-harness PRIVATE srt_dubber_core)
+target_include_directories(recording-harness PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/vendor)
+
+# Recording flow tests
+add_executable(recording-flow-tests tests/recording_flow_test.cpp)
+target_link_libraries(recording-flow-tests PRIVATE srt_dubber_core)
+target_include_directories(recording-flow-tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
