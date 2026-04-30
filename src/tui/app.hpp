@@ -21,8 +21,5 @@ private:
     AudioRecorder           recorder_;
     AudioPlayer             player_;
 
-    enum class Screen { Session, Recording, Review, Assemble };
-    Screen current_screen_  {Screen::Session};
-    int    recording_start_ {0};   // entry index to open recording screen at
-    int    review_selected_ {0};   // last selected row in review list
+
 };

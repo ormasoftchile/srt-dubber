@@ -45,8 +45,10 @@ FetchContent_MakeAvailable(json)
 add_library(srt_dubber_core STATIC
   src/core/recording_flow.cpp
   src/core/assemble_flow.cpp
+  src/core/review_flow.cpp
   src/core/project.cpp
   src/core/resync.cpp
+  src/core/app_session.cpp
   src/srt/parser.cpp
 )
 target_include_directories(srt_dubber_core PUBLIC
@@ -65,6 +67,8 @@ target_include_directories(srt-dubber PRIVATE
   ${CMAKE_SOURCE_DIR}/vendor
 )
 
+enable_testing()
+
 # Turn-based harness
 add_executable(recording-harness tools/recording_harness.cpp)
 target_link_libraries(recording-harness PRIVATE srt_dubber_core)
@@ -74,11 +78,13 @@ target_include_directories(recording-harness PRIVATE ${CMAKE_SOURCE_DIR}/src ${C
 add_executable(recording-flow-tests tests/recording_flow_test.cpp)
 target_link_libraries(recording-flow-tests PRIVATE srt_dubber_core)
 target_include_directories(recording-flow-tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+add_test(NAME recording-flow-tests COMMAND recording-flow-tests)
 
 # Recording render state tests
 add_executable(recording-render-state-tests tests/recording_render_state_test.cpp)
 target_link_libraries(recording-render-state-tests PRIVATE srt_dubber_core)
 target_include_directories(recording-render-state-tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+add_test(NAME recording-render-state-tests COMMAND recording-render-state-tests)
 
 # Effect dispatcher integration tests (fakes in tests/audio/ replace real audio headers)
 add_executable(effect-dispatcher-tests
@@ -90,8 +96,34 @@ target_include_directories(effect-dispatcher-tests PRIVATE
   ${CMAKE_SOURCE_DIR}/tests   # stubs (tests/audio/) shadow src/audio/
   ${CMAKE_SOURCE_DIR}/src
 )
+add_test(NAME effect-dispatcher-tests COMMAND effect-dispatcher-tests)
 
 # Assemble flow tests
 add_executable(assemble-flow-tests tests/assemble_flow_test.cpp)
 target_link_libraries(assemble-flow-tests PRIVATE srt_dubber_core)
 target_include_directories(assemble-flow-tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+add_test(NAME assemble-flow-tests COMMAND assemble-flow-tests)
+
+# Review flow tests
+add_executable(review-flow-tests tests/review_flow_test.cpp)
+target_link_libraries(review-flow-tests PRIVATE srt_dubber_core)
+target_include_directories(review-flow-tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+add_test(NAME review-flow-tests COMMAND review-flow-tests)
+
+# AppSession router state machine tests
+add_executable(app-session-tests tests/app_session_test.cpp)
+target_link_libraries(app-session-tests PRIVATE srt_dubber_core)
+target_include_directories(app-session-tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+add_test(NAME app-session-tests COMMAND app-session-tests)
+
+# Multi-screen app harness (nav + all screen machines, no audio/TUI)
+add_executable(app-harness tools/app_harness.cpp)
+target_link_libraries(app-harness PRIVATE srt_dubber_core nlohmann_json::nlohmann_json)
+target_include_directories(app-harness PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+# Integration test: app-harness shell script
+add_test(
+  NAME app-harness-integration
+  COMMAND bash ${CMAKE_SOURCE_DIR}/tests/app_harness_test.sh
+  WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)

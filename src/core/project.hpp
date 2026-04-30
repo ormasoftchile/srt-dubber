@@ -46,14 +46,6 @@ public:
     /// (e.g.  "episode01-project.json" → "episode01").
     std::string display_name() const;
 
-    // ---------------------------------------------------------------------------
-    // Transient TUI state — not persisted to project.json.
-    // Populated by the assembly thread and displayed by the assemble screen.
-    // ---------------------------------------------------------------------------
-    std::vector<std::string> assemble_log;
-    bool                     assemble_complete {false};
-    std::string              output_path;
-
 private:
     std::filesystem::path    project_file_;
     std::vector<ProjectEntry> entries_;

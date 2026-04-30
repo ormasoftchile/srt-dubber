@@ -10,6 +10,16 @@
 
 ## Learnings
 
+### 2026-04-30 — Slice 8: Multi-screen app harness
+
+- **app-harness links srt_dubber_core only** — no audio, no FTXUI; `nlohmann_json::nlohmann_json` listed explicitly alongside `srt_dubber_core` because it is used directly in the harness (not via transitive PUBLIC link).
+- **ProjectEntry fixture:** Harness builds `std::vector<ProjectEntry>` inline — no SRT file needed; `raw_take_path` is a std::string that starts empty and is set to `"fake_take.wav"` when `StopRecording` effect is observed.
+- **review_render_state() takes ProjectEntry vector** — so harness maintains a `std::vector<ProjectEntry>` fixture that doubles as ground truth for both recording and review screens.
+- **AssemblyDone requires Assembling phase** — calling `assemble_step(state, AssemblyDone)` while phase != Assembling is a no-op; test must call `Start` first to enter Assembling state before injecting AssemblyDone.
+- **Test JSON parsing:** Shell test uses a Python3 brace-depth parser (not jq) to split multi-object NDJSON-like output into individual frames; no jq dependency.
+- **Wrong-screen error path:** Session screen returns an error for any screen-level (non-nav) command; harness uses the literal screen name in error strings for debuggability.
+- **CTest add_test WORKING_DIRECTORY:** Integration test runs with `WORKING_DIRECTORY ${CMAKE_BINARY_DIR}` so the harness path `./app-harness` resolves; test script receives absolute harness path via `${CMAKE_SOURCE_DIR}`.
+
 ### 2024 — Initial build system scaffold
 
 - **FetchContent SHA256 for nlohmann/json 3.11.3**: `d6c65aca6b1ed68e7a182f4757257b107ae403032760ed6ef121c9d55e81757d` — pin it to avoid silent upstream mutations.
@@ -45,3 +55,34 @@
 - **Branch setup**: main branch set to track origin/main
 - **HEAD commit**: 4bfb624 "Add --resync command to remap takes to new SRT timing"
 - **Public visibility ensures**: All contributors can clone, fork, and collaborate; CI/CD workflows can trigger on push/PR events
+
+### 2026-04-30 — Slice 8: Multi-screen app harness
+
+**Harness Architecture:**
+- `tools/app_harness.cpp`: Standalone JSON stdin/stdout interface
+- Drives nav_step() + all screen machines (recording_flow, review_flow, assemble_flow)
+- No TUI, no audio, no threading — links against srt_dubber_core + nlohmann_json only
+- ProjectEntry fixture built inline (no SRT file needed)
+
+**Test Suite:**
+- `tests/app_harness_test.sh`: 5 end-to-end flows with 26 total assertions
+- Test cases: record→review→assemble, error paths, screen transitions
+- Shell test uses Python3 JSON parser (no jq dependency) for NDJSON splitting
+- 100% pass rate
+
+**CMake Integration:**
+- Harness target added to `src/CMakeLists.txt`
+- CTest integration: `WORKING_DIRECTORY ${CMAKE_BINARY_DIR}` resolves harness path correctly
+- Test script receives absolute harness path via CMAKE variable
+
+**Design Decisions:**
+- SpawnAssembly effect is a no-op (threading is TUI-only, harness never spawns ffmpeg)
+- AssemblyDone must be injected manually in tests (simulates async completion)
+- Fixture provides ground truth for recording/review/assemble screens
+
+**Closure:**
+- **Slices 1–8 complete:** Full interaction architecture implemented
+- **Pure machines:** Recording, Review, Assemble, Navigation all testable without TUI
+- **Effect dispatchers:** Centralized side-effect handling across all screens
+- **Validation:** 64 unit tests + multi-screen harness with 26 integration assertions
+- **Next phase:** Countdown timer in dispatcher, event sourcing/replay infrastructure

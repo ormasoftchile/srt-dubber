@@ -8,43 +8,28 @@
 - **Key collaborators:** Alan (architecture/SRT), Steven (TUI), Richard (build)
 - **Audio spec:** mono, 44.1kHz, WAV PCM 16-bit; atempo max 1.08x; overflow = require redo
 
-## Learnings
+### Consolidated Learning — Bluetooth Warm-up, Device Selection, FFmpeg Pipeline (2025–2026-04-14)
 
-### Session — Bluetooth warm-up fix & device diagnostics
-- **Root cause of "first part lost" + 1s glitch:** Bluetooth devices (AirPods Max) undergo an A2DP→HFP/SCO profile switch when a capture device is opened. This takes ~500–1000ms and delivers garbled/absent samples during the transition. Discarding the first 400ms of samples (17640 frames at 44100 Hz) eliminates both symptoms in one shot.
-- **Warm-up implementation:** Added `m_warmed_up` + `m_warmup_samples_discarded` atomics. The `data_callback` counts discarded frames; once ≥ `kWarmupSamples` (= `44100 * 4 / 10`), it flips `m_warmed_up` and records the start timestamp. The visible `elapsed_ms()` timer therefore starts only after warm-up — no confusing "0.4s" offset shown to user.
-- **`m_start_epoch_ms` dual-write pattern:** `start()` still writes an initial timestamp as a safe fallback, but the canonical "real start" is written by the data callback on warm-up completion. Because `elapsed_ms()` is read from the UI thread (not audio thread), `std::memory_order_relaxed` is fine for both the atomic write and read — no ordering guarantee needed across these unrelated operations.
-- **Device name + sample rate diagnostics:** Printing `device.capture.name` after `ma_device_init()` lets the user confirm they're on Bluetooth vs built-in mic. A sample-rate mismatch warning (if device doesn't honour 44100 Hz) surfaces quality issues proactively.
-- **`list_devices()` via `ma_context`:** Uses `ma_context_get_devices()` which returns a contiguous array owned by the context. Must uninit context after use. No heap allocation needed for device info arrays — miniaudio manages them internally within the context lifetime.
+**Bluetooth warm-up fix:**
+- Root cause: A2DP→HFP/SCO profile switch takes 500–1000ms on first capture device open, delivers garbled samples during transition
+- Solution: Discard first 400ms of samples (17640 frames at 44100 Hz); atomic flags track warm-up completion; visible timer starts post-warm-up
+- Dual-write pattern on m_start_epoch_ms: fallback + data_callback canonical write; memory_order_relaxed sufficient (UI thread only reads)
 
-### Session — Audio & FFmpeg module creation
-- **MA_IMPLEMENTATION guard:** `recorder.cpp` defines `#define MINIAUDIO_IMPLEMENTATION` before including `vendor/miniaudio.h`; `player.cpp` includes the header without the define. This satisfies the single-definition rule for the miniaudio implementation blob. (Macro name confirmed from `vendor/README.md` — use `MINIAUDIO_IMPLEMENTATION`, not `MA_IMPLEMENTATION`.)
-- **PlayerContext pattern:** miniaudio's `pUserData` is a single `void*`. We heap-allocate a `PlayerContext` struct (holds `ma_device + ma_decoder + AudioPlayer*`) and cast it in the callback. The `m_device` field in `AudioPlayer` is repurposed as an opaque handle to this context.
-- **Temp file placement:** processor temp files (`_trim.wav`, `_norm.wav`) are placed next to `output_wav` (same directory) to avoid cross-device `rename()` failures.
-- **Overflow policy:** when `rate > 1.08x`, we still produce a file stretched at exactly 1.08x and set `is_overflow = true`. The TUI layer decides whether to prompt a redo.
-- **atempo chain:** `atempo` filter only supports rates 0.5–2.0. Since our cap is 1.08x we never need to chain multiple `atempo` filters.
-- **amix filter_complex:** each clip gets an `adelay={ms}|{ms}` label, then all labels feed into a single `amix=inputs=N:normalize=0`. `normalize=0` preserves individual clip levels post-loudnorm.
-- **ffprobe output parsing:** `popen` + `fgets` loop then `std::stod`. Robust to trailing newline from ffprobe CSV output.
+**Device selection:**
+- AudioRecorder constructor accepts device_index (-1 = default, ≥0 = select by index)
+- ma_device_id lifetime safe: extracted into local, used synchronously in ma_device_init, never accessed after
+- Device name + sample rate diagnostics printed after init; list_devices() uses ma_context with automatic cleanup
 
-## Session — Audio & FFmpeg module creation
-- **MA_IMPLEMENTATION guard:** `recorder.cpp` defines `#define MINIAUDIO_IMPLEMENTATION` before including `vendor/miniaudio.h`; `player.cpp` includes the header without the define. This satisfies the single-definition rule for the miniaudio implementation blob. (Macro name confirmed from `vendor/README.md` — use `MINIAUDIO_IMPLEMENTATION`, not `MA_IMPLEMENTATION`.)
-- **PlayerContext pattern:** miniaudio's `pUserData` is a single `void*`. We heap-allocate a `PlayerContext` struct (holds `ma_device + ma_decoder + AudioPlayer*`) and cast it in the callback. The `m_device` field in `AudioPlayer` is repurposed as an opaque handle to this context.
-- **Temp file placement:** processor temp files (`_trim.wav`, `_norm.wav`) are placed next to `output_wav` (same directory) to avoid cross-device `rename()` failures.
-- **Overflow policy:** when `rate > 1.08x`, we still produce a file stretched at exactly 1.08x and set `is_overflow = true`. The TUI layer decides whether to prompt a redo.
-- **atempo chain:** `atempo` filter only supports rates 0.5–2.0. Since our cap is 1.08x we never need to chain multiple `atempo` filters.
-- **amix filter_complex:** each clip gets an `adelay={ms}|{ms}` label, then all labels feed into a single `amix=inputs=N:normalize=0`. `normalize=0` preserves individual clip levels post-loudnorm.
-- **ffprobe output parsing:** `popen` + `fgets` loop then `std::stod`. Robust to trailing newline from ffprobe CSV output.
+**miniaudio & FFmpeg patterns:**
+- MINIAUDIO_IMPLEMENTATION defined only in recorder.cpp; player.cpp includes header without define
+- PlayerContext pattern: heap-allocate struct with (ma_device, ma_decoder, AudioPlayer*), cast in callback
+- Temp files placed next to output_wav to avoid cross-device rename() failures
+- Overflow policy: stretch at 1.08x, set is_overflow flag, let TUI decide redo
+- atempo filter chain: single filter (supports 0.5–2.0x, our cap is 1.08x)
+- amix filter_complex: adelay labels + single amix=inputs=N:normalize=0 (preserves clip levels post-loudnorm)
+- ffprobe output: popen + fgets loop + stod (robust to trailing newlines)
 
-### Session — --device N flag for audio input selection
-- **Motivation:** Mac mini has no built-in mic; user has two devices (AirPods Max at [0], ZoomAudioDevice at [1]) and needs to select by index.
-- **AudioRecorder constructor now takes `int device_index = -1`:** stored as `m_device_index`. Default -1 = use system default (pDeviceID = nullptr, existing behavior unchanged).
-- **Device selection in `start()`:** when `m_device_index >= 0`, opens a short-lived `ma_context`, calls `ma_context_get_devices()`, copies the `ma_device_id` at that index into a local `selected_id`, and sets `dev_cfg.capture.pDeviceID = &selected_id` before `ma_device_init()`. Context is immediately uninited after extracting the ID. Falls back to default with a warning if index is out of range.
-- **`ma_device_id` lifetime:** the id must survive `ma_device_init()` — storing in a local on the stack within `start()` is safe since `ma_device_init` completes synchronously before the local goes out of scope.
-- **App constructor updated:** `App(project, video_path, device_index)` — passes `device_index` straight to `AudioRecorder(device_index)` in the member initialiser list. No separate setter needed.
-- **main.cpp arg parsing:** `--device N` consumed before the positional args via a `first_pos` offset. `--list-devices` path unchanged. Hint `[audio] Use --list-devices...` printed to stderr before TUI launch so user sees it regardless of device choice.
-- **No changes to recording_screen.cpp:** device selection is encapsulated in the recorder itself, so no screen-level plumbing was needed.
-
-### Slice 4 Prep — Dispatch Map — 2026-04-30
+## Recent Work — Slices 4 & 6B Complete
 - Read `recorder.hpp`, `player.hpp`, `project.hpp`, `recording_effects.hpp`, `recording_screen.cpp`
 - Dispatch spec written to `.squad/decisions/inbox/butch-slice4-dispatch-spec.md`
 - Key findings:
@@ -53,6 +38,30 @@
   - `PlayTake` needs `!recorder_.is_recording()` guard + defensive `player_.stop()` before `play()` (player has no "already playing" check)
   - `SaveTake` is in-memory only; `SaveProject` is the explicit flush — do not conflate them
   - `ExitToSession` is TUI-only; dispatcher no-op
+
+### Slice 4 Complete — RecordingEffectDispatcher Implementation — 2026-04-30
+**With Alan (collaborative implementation)**
+- **Spec implemented:** All findings from dispatch prep become RecordingEffectDispatcher centralisation rules
+- **Key architecture:**
+  - `src/core/effect_dispatcher.hpp/.cpp` defines `RecordingEffectDispatcher` with `apply_all(const std::vector<RecordingEffect>&)` method
+  - Dispatcher owns AudioRecorder + AudioPlayer + Project references (no cross-module leak from TUI)
+  - std::visit pattern safely dispatches each effect type → correct method call on owned resources
+  - Recorder two-step (`start(path)` + `set_capture_active(true)`) preserved in StartCountdown handler
+  - CancelCountdown bug FIXED: now correctly calls `recorder_.stop()` when device is open (was missing in inline code)
+  - PlayTake guards with `!recorder_.is_recording()` + defensive `player_.stop()` before playback
+  - SaveTake/SaveProject contract preserved (in-memory vs flush)
+  - ExitToSession no-op (TUI still owns navigation)
+- **Integration:**
+  - `recording_screen.cpp` uses `dispatcher_.apply_all(transition.effects)` — no more inline audio/project calls
+  - [[deprecated]] FlowEffects::from_variants() no longer called from TUI → warning eliminated
+  - recording_screen.cpp now thin adapter: parse keys → call `recording_step()` → use dispatcher
+- **Testing:**
+  - Stub headers (tests/audio/recorder.hpp, tests/audio/player.hpp) shadow real headers in test build
+  - effect_dispatcher_test.cpp: 10 assertions across 4 test cases, all pass
+  - 22 recording-flow-tests + 3 recording-render-state-tests still pass
+  - Build clean, zero errors
+
+**Benefit:** TUI layer no longer knows about audio/project APIs. All mutations flow through dispatcher — single audit point for side effects.
 
 ### Recording Flow State Machine Pattern — 2026-04-30
 
@@ -65,3 +74,24 @@
 **Test suite:** `tests/recording_flow_test.cpp` — 22 tests, 100% pass.
 
 **Benefit for Butch:** The new `srt_dubber_core` library (core + srt parser, no audio/TUI deps) enables future audio processing tests to link against project state without instantiating full audio devices. Consider extracting processor/assembler logic into harness-compatible patterns for integration testing of ffmpeg chains.
+
+### Slice 6B — AssembleFlow TUI Wiring — 2026-04-30
+
+- **Command queue pattern:** Assembly thread cannot call `assemble_step()` directly (it runs concurrently). Instead it pushes `(AssembleCmd, payload)` pairs into a `std::vector` protected by a mutex, then fires `screen.PostEvent(Event::Custom)`. The FTXUI event handler drains the queue on every event and calls `assemble_step()` serially — keeps the state machine single-threaded.
+- **Auto-start on entry:** `assemble_step(state, AssembleCmd::Start)` called immediately before the screen loop. `SpawnAssembly{}` effect handler captures clips, voiceover_out, video_out and spawns the `std::jthread`. Clips are collected inside the effect handler, not in the thread lambda, to keep capture clean.
+- **jthread stop is best-effort:** ffmpeg call inside the thread is blocking. `assembly_thread.request_stop()` on 'q' sets the stop token but the thread only checks it at the next cooperative point. Thread destructor auto-joins — no dangling thread.
+- **Removed from `Project`:** `assemble_log`, `assemble_complete`, `output_path` — all three were transient and only read by `assemble_screen.cpp`. Now replaced by `AssembleState` owned locally in `run_assemble_screen`. Confirmed safe — no other file used these fields.
+- **Renderer decoupled:** Reads from `assemble_render_state(assemble_state)` snapshot only; no direct lock or project access.
+- **Effect handler inlined:** No separate `AssembleEffectDispatcher` class — `apply_effects` lambda handles all four effect types inline. `SaveProject` calls `project.save()`; `ExitToSession` calls `screen.ExitLoopClosure()()`.
+
+### Slices 6B Complete — Full Assembly Pipeline Testable
+**Date:** 2026-04-30
+
+**Wiring Phase (Phase B):** assemble_screen.cpp fully wired to AssembleFlow machine using command queue pattern. Assembly thread posts AssembleCmd to queue protected by mutex; FTXUI event handler drains queue on every custom event and calls assemble_step() serially.
+
+**Project Cleanup:** Removed three transient fields from Project struct: `assemble_log`, `assemble_complete`, `output_path`. All three were read/written only in assemble_screen.cpp. Replacement: `AssembleState` now owned locally in `run_assemble_screen()`, fed to assemble_step() and assemble_render_state() pure functions.
+
+**Threading Safety:** jthread pattern with stop_token. Thread is blocking (ffmpeg subprocess); stop token is best-effort only. Thread destructor auto-joins.
+
+**Benefit:** Assembly screen no longer mutates Project directly. All state flows through pure state machine. Decouples threading concerns from business logic. Machine is testable in isolation (Phase A); TUI wiring (Phase B) adds threading without changing core logic.
+

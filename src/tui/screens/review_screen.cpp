@@ -1,4 +1,6 @@
 #include "tui/screens/review_screen.hpp"
+#include "core/review_flow.hpp"
+#include "core/review_effect_dispatcher.hpp"
 
 #include "ftxui/component/component.hpp"
 #include "ftxui/component/event.hpp"
@@ -12,22 +14,14 @@ using namespace ftxui;
 
 namespace tui {
 
-// ── Helpers ─────────────────────────────────────────────────────────────────
-
-static std::string truncate_to(const std::string& s, std::size_t max_len) {
-    if (s.size() <= max_len) return s;
-    return s.substr(0, max_len - 3) + "...";
-}
-
 static std::string fmt_dur_ms(int64_t ms) {
-    if (ms < 0) return "  —  ";
+    if (ms <= 0) return "  \xe2\x80\x94  ";
     char buf[32];
     std::snprintf(buf, sizeof(buf), "%.1fs", ms / 1000.0);
     return buf;
 }
 
-static Element status_cell(core::TakeStatus s) {
-    const std::string label{core::take_status_to_string(s)};
+static Element status_cell(const std::string& label, core::TakeStatus s) {
     switch (s) {
         case core::TakeStatus::pending:   return dim(text(label));
         case core::TakeStatus::ok:        return text(label);
@@ -37,25 +31,24 @@ static Element status_cell(core::TakeStatus s) {
     return text(label);
 }
 
-// ── Screen ──────────────────────────────────────────────────────────────────
-
 ScreenAction run_review_screen(core::Project& project,
-                               AudioPlayer&   player,
-                               int&           selected_index) {
+                                AudioPlayer&   player,
+                                int&           selected_index) {
     auto& entries = project.entries();
     if (entries.empty()) return ScreenAction::GoSession;
 
     auto screen = ScreenInteractive::Fullscreen();
     ScreenAction action = ScreenAction::GoSession;
 
-    // Clamp selection to valid range.
     selected_index = std::max(0, std::min(selected_index,
                               static_cast<int>(entries.size()) - 1));
 
-    auto renderer = Renderer([&]() -> Element {
-        const int total = static_cast<int>(entries.size());
+    core::ReviewState            review_state{selected_index, static_cast<int>(entries.size())};
+    core::ReviewEffectDispatcher dispatcher{player};
 
-        // ── Column header ────────────────────────────────────────────────
+    auto renderer = Renderer([&]() -> Element {
+        auto rs = core::review_render_state(review_state, entries);
+
         auto header = hbox({
             dim(text("  IDX ")),
             dim(text("  TEXT PREVIEW                    ")),
@@ -64,88 +57,79 @@ ScreenAction run_review_screen(core::Project& project,
             dim(text("  STATUS  ")),
         });
 
-        // ── Rows ─────────────────────────────────────────────────────────
         Elements rows;
-        rows.reserve(total);
-        for (int i = 0; i < total; ++i) {
-            const auto& e = entries[i];
-
+        rows.reserve(rs.rows.size());
+        for (int i = 0; i < static_cast<int>(rs.rows.size()); ++i) {
+            const auto& r = rs.rows[i];
             char idx_buf[8];
-            std::snprintf(idx_buf, sizeof(idx_buf), "%4d", e.index);
-
-            const std::string preview =
-                truncate_to([&]{
-                    std::string t = e.text;
-                    for (auto& c : t) if (c == '\n') c = ' ';
-                    return t;
-                }(), 32);
+            std::snprintf(idx_buf, sizeof(idx_buf), "%4d", r.idx);
 
             auto row = hbox({
                 text(std::string(idx_buf) + "  "),
-                text(preview) | flex,
-                text("  " + fmt_dur_ms(e.slot_duration_ms)      + "  "),
-                text("  " + fmt_dur_ms(e.processed_duration_ms) + "  "),
+                text(r.text_preview) | flex,
+                text("  " + fmt_dur_ms(r.slot_ms) + "  "),
+                text("  " + fmt_dur_ms(r.proc_ms) + "  "),
                 text("  "),
-                status_cell(e.status),
+                status_cell(r.status_label, core::take_status_from_string(r.status_label)),
                 text("  "),
             });
 
-            if (i == selected_index) {
+            if (i == rs.selected_idx)
                 rows.push_back(row | inverted | focus);
-            } else {
+            else
                 rows.push_back(row);
-            }
         }
 
         auto list = vbox(rows) | yframe | flex;
 
         return border(vbox({
             hbox({bold(text("  Review")),
-                  dim(text("  (" + std::to_string(total) + " entries)")),
+                  dim(text("  (" + std::to_string(rs.total) + " entries)")),
                   filler()}),
             separator(),
             header,
             separator(),
             list,
             separator(),
-            hbox({text("  [↑/↓] navigate  [enter] redo  [p] play take  [q] back"),
+            hbox({text("  [\xe2\x86\x91/\xe2\x86\x93] navigate  [enter/r] redo  [p] play take  [q/b] back"),
                   filler()}),
         }));
     });
 
     auto component = CatchEvent(renderer, [&](Event event) -> bool {
-        const int total = static_cast<int>(entries.size());
+        std::string key;
+        if      (event == Event::ArrowUp)   key = "\x1B[A";
+        else if (event == Event::ArrowDown) key = "\x1B[B";
+        else if (event == Event::Return)    key = "\r";
+        else if (event.is_character())      key = event.character();
+        else return false;
 
-        if (event == Event::ArrowUp || (event.is_character() && event.character() == "k")) {
-            if (selected_index > 0) --selected_index;
-            return true;
+        auto cmd = core::parse_review_cmd(key);
+        if (!cmd) return false;
+
+        bool has_take = false;
+        std::filesystem::path take_path;
+        if (review_state.selected_idx < static_cast<int>(entries.size())) {
+            const auto& e = entries[review_state.selected_idx];
+            has_take  = !e.raw_take_path.empty();
+            take_path = e.raw_take_path;
         }
-        if (event == Event::ArrowDown || (event.is_character() && event.character() == "j")) {
-            if (selected_index < total - 1) ++selected_index;
-            return true;
-        }
-        if (event == Event::Return) {
-            // Open recording screen at this entry.
-            player.stop();
+
+        auto transition = core::review_step(review_state, *cmd, has_take, take_path);
+        review_state   = transition.next;
+        selected_index = review_state.selected_idx;
+        dispatcher.apply_all(transition.effects);
+
+        if (auto nav = dispatcher.take_navigate_to_record()) {
+            selected_index = *nav;
             action = ScreenAction::GoRecord;
             screen.ExitLoopClosure()();
-            return true;
+        } else if (dispatcher.exit_to_session_requested()) {
+            action = ScreenAction::GoSession;
+            screen.ExitLoopClosure()();
         }
-        if (event.is_character()) {
-            const auto ch = event.character();
-            if (ch == "p") {
-                const auto& e = entries[selected_index];
-                if (!e.raw_take_path.empty()) player.play(e.raw_take_path);
-                return true;
-            }
-            if (ch == "q") {
-                player.stop();
-                action = ScreenAction::GoSession;
-                screen.ExitLoopClosure()();
-                return true;
-            }
-        }
-        return false;
+
+        return true;
     });
 
     screen.Loop(component);
