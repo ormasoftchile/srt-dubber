@@ -1,4 +1,5 @@
 #include "tui/screens/recording_screen.hpp"
+#include "tui/app_header.hpp"
 
 #include "core/recording_flow.hpp"
 #include "core/recording_effects.hpp"
@@ -150,24 +151,13 @@ ScreenAction run_recording_screen(core::Project& project,
         const bool  rec    = (rs.phase_label == "recording");
         const auto  cstate = countdown_state.load();
 
-        // ── Top bar ──────────────────────────────────────────────────────
-        Elements bar;
-        bar.push_back(bold(text(fmt_idx(rs.current_idx + 1, rs.total))));
-        bar.push_back(filler());
-        bar.push_back(dim(text(" slot: ")));
-        bar.push_back(text(fmt_dur_ms(rs.slot_duration_ms) + " "));
-        if (rec) {
-            bar.push_back(text(" " + fmt_dur_ms(rs.elapsed_ms) + " "));
-            if (recorder.is_warming_up()) {
-                bar.push_back(bold(color(Color::Yellow, text(" ● warming up… "))));
-            } else {
-                bar.push_back(bold(color(Color::Red, text(" ●REC "))));
-            }
-        } else if (cstate != CountdownState::None) {
-            bar.push_back(dim(text(" counting… ")));
-        } else {
-            bar.push_back(dim(text(" ●    ")));
-        }
+        // ── Header: app identity + caption progress, or live recording state ──
+        char caption_buf[32];
+        std::snprintf(caption_buf, sizeof(caption_buf), "Caption %d/%d",
+                      rs.current_idx + 1, rs.total);
+        Element header_elem = rec
+            ? app_header_recording(recorder.is_warming_up())
+            : app_header(caption_buf);
 
         // ── Subtitle text ────────────────────────────────────────────────
         // Replace embedded newlines with spaces for wrapping purposes.
@@ -222,8 +212,8 @@ ScreenAction run_recording_screen(core::Project& project,
         }
 
         return borderRounded(vbox({
-            // top bar
-            hbox(bar),
+            // header
+            header_elem,
             separator(),
 
             // body (countdown overlay or subtitle)

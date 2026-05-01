@@ -1,4 +1,5 @@
 #include "tui/screens/review_screen.hpp"
+#include "tui/app_header.hpp"
 #include "core/review_flow.hpp"
 #include "core/review_effect_dispatcher.hpp"
 
@@ -93,11 +94,7 @@ ScreenAction run_review_screen(core::Project& project,
 
         return borderRounded(vbox({
             text(""),
-            hbox({
-                text("  "), bold(text("Review")),
-                dim(text("  " + std::to_string(rs.total) + " entries")),
-                filler(),
-            }),
+            app_header("Review"),
             text(""),
             header,
             list,

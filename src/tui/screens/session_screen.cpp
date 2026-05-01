@@ -1,4 +1,5 @@
 #include "tui/screens/session_screen.hpp"
+#include "tui/app_header.hpp"
 
 #include "ftxui/component/component.hpp"
 #include "ftxui/component/screen_interactive.hpp"
@@ -49,13 +50,7 @@ ScreenAction run_session_screen(core::Project& project) {
         return borderRounded(vbox({
             // ── App header ───────────────────────────────────────────
             text(""),
-            hbox({
-                text("  "),
-                color(Color::Cyan, bold(text("s r t"))),
-                dim(text("  \xc2\xb7  ")),
-                bold(text("d u b b e r")),
-                filler(),
-            }),
+            app_header(),
             text(""),
 
             // ── Project context ──────────────────────────────────────

@@ -1,4 +1,5 @@
 #include "tui/screens/assemble_screen.hpp"
+#include "tui/app_header.hpp"
 
 #include "core/assemble_flow.hpp"
 #include "ffmpeg/assembler.hpp"
@@ -186,7 +187,7 @@ ScreenAction run_assemble_screen(core::Project& project,
 
         return borderRounded(vbox({
             text(""),
-            hbox({text("  "), bold(text("Assemble")), filler()}),
+            app_header("Assemble"),
             text(""),
             vbox(lines) | yframe | flex,
             footer,
