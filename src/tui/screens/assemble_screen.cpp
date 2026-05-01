@@ -11,6 +11,7 @@
 #include "ftxui/dom/elements.hpp"
 
 #include <chrono>
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <utility>
@@ -19,6 +20,212 @@
 using namespace ftxui;
 
 namespace tui {
+
+// ── Assemble state (shared_ptr across lambdas) ───────────────────────────────
+
+struct AssembleStateWrapper {
+    core::AssembleState assemble_state;
+    std::mutex cmd_mutex;
+    std::vector<std::pair<core::AssembleCmd, std::string>> cmd_queue;
+    std::jthread assembly_thread;
+    
+    AssembleStateWrapper() = default;
+    
+    // non-copyable, non-movable (mutex, jthread)
+    AssembleStateWrapper(const AssembleStateWrapper&) = delete;
+    AssembleStateWrapper& operator=(const AssembleStateWrapper&) = delete;
+};
+
+// ── Component factory ────────────────────────────────────────────────────────
+
+Component make_assemble_component(
+    core::Project& project,
+    const std::filesystem::path& video_path,
+    ScreenInteractive& screen,
+    NavigateFunc navigate)
+{
+    auto state = std::make_shared<AssembleStateWrapper>();
+
+    // Effect handler
+    auto apply_effects = [state, &project, &video_path, &screen, navigate](
+        const std::vector<core::AssembleEffect>& effects)
+    {
+        for (const auto& eff : effects) {
+            std::visit([&](const auto& v) {
+                using T = std::decay_t<decltype(v)>;
+
+                if constexpr (std::is_same_v<T, core::SpawnAssembly>) {
+                    // Collect clips
+                    std::vector<ffmpeg::ProcessedClip> clips;
+                    for (const auto& e : project.entries()) {
+                        std::filesystem::path p;
+                        if (!e.processed_take_path.empty()) {
+                            std::filesystem::path pp(e.processed_take_path);
+                            if (std::filesystem::exists(pp)) p = pp;
+                        }
+                        if (p.empty() && !e.raw_take_path.empty()) {
+                            std::filesystem::path rp(e.raw_take_path);
+                            if (std::filesystem::exists(rp)) p = rp;
+                        }
+                        if (!p.empty())
+                            clips.push_back({p, e.start_ms, e.index});
+                    }
+
+                    auto voiceover_out = project.output_dir() / "voiceover.wav";
+                    auto video_out     = project.output_dir() / "output.mp4";
+
+                    state->assembly_thread = std::jthread([state, &screen, clips, voiceover_out, video_out, video_path](std::stop_token) {
+                        auto post_cmd = [state, &screen](core::AssembleCmd cmd, std::string payload = {}) {
+                            {
+                                std::lock_guard<std::mutex> lk(state->cmd_mutex);
+                                state->cmd_queue.emplace_back(cmd, std::move(payload));
+                            }
+                            screen.PostEvent(Event::Custom);
+                        };
+
+                        if (clips.empty()) {
+                            post_cmd(core::AssembleCmd::ProgressLine,
+                                     "⚠  No takes found — record something first.");
+                            post_cmd(core::AssembleCmd::AssemblyFailed, "No takes found.");
+                            return;
+                        }
+
+                        post_cmd(core::AssembleCmd::ProgressLine,
+                                 "Starting assembly (" + std::to_string(clips.size()) + " clips)…");
+
+                        ffmpeg::FfmpegAssembler assembler;
+                        auto result = assembler.assemble(
+                            clips,
+                            /*video_duration_ms=*/0,
+                            video_path,
+                            voiceover_out,
+                            video_out,
+                            [&](int cur, int total) {
+                                if (cur == 1)
+                                    post_cmd(core::AssembleCmd::ProgressLine,
+                                             "✓  Voiceover mix complete.");
+                                if (cur == total)
+                                    post_cmd(core::AssembleCmd::ProgressLine,
+                                             "✓  Video mux complete.");
+                            }
+                        );
+
+                        if (result.success) {
+                            post_cmd(core::AssembleCmd::ProgressLine,
+                                     "✓  Done → " + video_out.string());
+                            post_cmd(core::AssembleCmd::AssemblyDone, video_out.string());
+                        } else {
+                            post_cmd(core::AssembleCmd::ProgressLine,
+                                     "✗  Assembly failed: " + result.error);
+                            post_cmd(core::AssembleCmd::AssemblyFailed, result.error);
+                        }
+                    });
+
+                } else if constexpr (std::is_same_v<T, core::AppendLog>) {
+                    (void)v;
+
+                } else if constexpr (std::is_same_v<T, core::SaveProject>) {
+                    project.save();
+
+                } else if constexpr (std::is_same_v<T, core::ExitToSession>) {
+                    navigate(ScreenAction::GoSession, 0);
+                }
+            }, eff);
+        }
+    };
+
+    // Auto-start assembly
+    {
+        auto t = core::assemble_step(state->assemble_state, core::AssembleCmd::Start);
+        state->assemble_state = t.next;
+        apply_effects(t.effects);
+    }
+
+    // Refresh thread
+    std::jthread refresh_thread([&screen](std::stop_token stop) {
+        while (!stop.stop_requested()) {
+            screen.PostEvent(Event::Custom);
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        }
+    });
+
+    auto renderer = Renderer([state]() -> Element {
+        auto rs = core::assemble_render_state(state->assemble_state);
+
+        Elements lines;
+        lines.reserve(rs.log_lines.size() + 1);
+        for (const auto& line : rs.log_lines)
+            lines.push_back(dim(text("  " + line)));
+        if (lines.empty())
+            lines.push_back(dim(text("  (starting…)")));
+
+        Element footer;
+        if (rs.phase_label == "complete") {
+            footer = vbox({
+                text(""),
+                color(Color::Green, hbox({text("  "), text(rs.footer)})),
+                text(""),
+                hbox({text("  "), dim(text("q  back")), filler()}),
+                text(""),
+            });
+        } else if (rs.phase_label == "failed") {
+            footer = vbox({
+                text(""),
+                color(Color::Red, hbox({text("  "), text("Assembly failed — see log above.")})),
+                text(""),
+                hbox({text("  "), dim(text("q  back")), filler()}),
+                text(""),
+            });
+        } else {
+            footer = vbox({
+                text(""),
+                hbox({text("  "), dim(text(rs.footer))}),
+                text(""),
+                hbox({text("  "), dim(text("q  back")), filler()}),
+                text(""),
+            });
+        }
+
+        return borderRounded(vbox({
+            text(""),
+            app_header("Assemble"),
+            text(""),
+            vbox(lines) | yframe | flex,
+            footer,
+        }));
+    });
+
+    return CatchEvent(renderer, [state, apply_effects](Event event) -> bool {
+        // Drain command queue
+        std::vector<std::pair<core::AssembleCmd, std::string>> pending;
+        {
+            std::lock_guard<std::mutex> lk(state->cmd_mutex);
+            pending.swap(state->cmd_queue);
+        }
+        for (auto& [cmd, payload] : pending) {
+            auto t = core::assemble_step(state->assemble_state, cmd, payload);
+            state->assemble_state = t.next;
+            apply_effects(t.effects);
+        }
+
+        if (!event.is_character()) return false;
+        const auto ch = event.character();
+
+        auto cmd_opt = core::parse_assemble_cmd(ch);
+        if (!cmd_opt.has_value()) return false;
+
+        // On 'q' during assembly, request stop on the thread (best-effort).
+        if (cmd_opt.value() == core::AssembleCmd::Back &&
+            state->assemble_state.phase == core::AssemblePhase::Assembling) {
+            state->assembly_thread.request_stop();
+        }
+
+        auto t = core::assemble_step(state->assemble_state, cmd_opt.value());
+        state->assemble_state = t.next;
+        apply_effects(t.effects);
+        return true;
+    });
+}
 
 ScreenAction run_assemble_screen(core::Project& project,
                                  const std::filesystem::path& video_path) {
