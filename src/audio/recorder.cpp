@@ -5,8 +5,28 @@
 #include "audio/recorder.hpp"
 
 #include <chrono>
+#include <cstdarg>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <stdexcept>
+
+// Per-recording diagnostic logging is silent by default because the TUI owns
+// the terminal during recording — any stderr write lands directly on the
+// alt-screen and produces stray-character artifacts. Set SRT_AUDIO_DEBUG=1
+// (or any non-empty value) to re-enable these messages.
+static void audio_log(const char* fmt, ...)
+{
+    static const bool enabled = [] {
+        const char* v = std::getenv("SRT_AUDIO_DEBUG");
+        return v && *v;
+    }();
+    if (!enabled) return;
+    va_list ap;
+    va_start(ap, fmt);
+    std::vfprintf(stderr, fmt, ap);
+    va_end(ap);
+}
 
 // ---------------------------------------------------------------------------
 // miniaudio data callback – called from the audio thread.
@@ -122,7 +142,7 @@ bool AudioRecorder::start(const std::filesystem::path& output_wav)
                 selected_id = capture_devices[m_device_index].id;
                 dev_cfg.capture.pDeviceID = &selected_id;
             } else {
-                fprintf(stderr,
+                audio_log(
                     "[audio] Warning: device index %d not found (%u devices). "
                     "Falling back to default.\n",
                     m_device_index, capture_count);
@@ -136,10 +156,10 @@ bool AudioRecorder::start(const std::filesystem::path& output_wav)
         return false;
     }
 
-    fprintf(stderr, "[audio] Recording device: %s\n", m_device->capture.name);
+    audio_log("[audio] Recording device: %s\n", m_device->capture.name);
 
     if (m_device->sampleRate != 44100) {
-        fprintf(stderr,
+        audio_log(
             "[audio] Warning: device sample rate is %u Hz (requested 44100). "
             "Audio quality may be reduced.\n",
             m_device->sampleRate);
@@ -176,8 +196,8 @@ bool AudioRecorder::stop()
     ma_device_uninit(m_device);
     ma_encoder_uninit(m_encoder);
 
-    fprintf(stderr, "[audio] Stopped. Frames written: %llu, peak sample: %d / 32767\n",
-            (unsigned long long)m_frames_written.load(), (int)m_peak_sample.load());
+    audio_log("[audio] Stopped. Frames written: %llu, peak sample: %d / 32767\n",
+              (unsigned long long)m_frames_written.load(), (int)m_peak_sample.load());
 
     // Reset objects so they can be reused.
     *m_device  = ma_device{};
