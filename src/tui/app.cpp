@@ -131,10 +131,9 @@ void ::App::run() {
         // Build the new screen's component
         active = build_component(nav, screen, navigate, project_, recorder_, player_, video_path_);
 
-        // Ensure the screen is clean before the next frame renders.
-        std::cout << "\033[?25l\033[H\033[2J" << std::flush;
-
-        // Trigger a re-render
+        // Trigger a re-render — FTXUI owns stdout; never write raw escape
+        // sequences outside its control as that corrupts its cursor-position
+        // tracking and produces stray character artifacts on screen transitions.
         screen.Post(Event::Custom);
     };
     
