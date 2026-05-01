@@ -142,11 +142,12 @@ Component make_assemble_component(
         apply_effects(t.effects);
     }
 
-    // Refresh thread
+    // Refresh thread — sleep in short increments so jthread destruction doesn't stall the main thread.
     state->refresh_thread = std::jthread([&screen](std::stop_token stop) {
         while (!stop.stop_requested()) {
             screen.PostEvent(Event::Custom);
-            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+            for (int i = 0; i < 13 && !stop.stop_requested(); ++i)
+                std::this_thread::sleep_for(std::chrono::milliseconds(16));
         }
     });
 

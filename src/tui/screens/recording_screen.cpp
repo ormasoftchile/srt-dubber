@@ -102,10 +102,12 @@ Component make_recording_component(
     };
 
     // Background refresh thread — drives the elapsed-time counter and countdown.
+    // Sleep in short increments so jthread destruction doesn't stall the main thread.
     state->refresh_thread = std::jthread([&screen](std::stop_token stop) {
         while (!stop.stop_requested()) {
             screen.PostEvent(Event::Custom);
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            for (int i = 0; i < 6 && !stop.stop_requested(); ++i)
+                std::this_thread::sleep_for(std::chrono::milliseconds(16));
         }
     });
 
@@ -130,18 +132,20 @@ Component make_recording_component(
                     state->countdown_state.store(CountdownState::Three);
                     state->countdown_thread = std::jthread([state, &screen](std::stop_token stop) {
                         using namespace std::chrono_literals;
-                        auto sleep_or_abort = [&](auto dur) -> bool {
-                            std::this_thread::sleep_for(dur);
+                        // Sleep in short increments so stop is checked frequently.
+                        auto sleep_or_abort = [&](int ms) -> bool {
+                            for (int i = 0; i < ms / 16 + 1 && !stop.stop_requested(); ++i)
+                                std::this_thread::sleep_for(std::chrono::milliseconds(16));
                             return stop.stop_requested();
                         };
-                        if (sleep_or_abort(1s)) { state->countdown_state.store(CountdownState::None); return; }
+                        if (sleep_or_abort(1000)) { state->countdown_state.store(CountdownState::None); return; }
                         state->countdown_state.store(CountdownState::Two);
-                        if (sleep_or_abort(1s)) { state->countdown_state.store(CountdownState::None); return; }
+                        if (sleep_or_abort(1000)) { state->countdown_state.store(CountdownState::None); return; }
                         state->countdown_state.store(CountdownState::One);
-                        if (sleep_or_abort(1s)) { state->countdown_state.store(CountdownState::None); return; }
+                        if (sleep_or_abort(1000)) { state->countdown_state.store(CountdownState::None); return; }
                         screen.PostEvent(Event::Special("\x01"));
                         state->countdown_state.store(CountdownState::Go);
-                        if (sleep_or_abort(300ms)) { state->countdown_state.store(CountdownState::None); return; }
+                        if (sleep_or_abort(300)) { state->countdown_state.store(CountdownState::None); return; }
                         state->countdown_state.store(CountdownState::None);
                     });
                 } else if constexpr (std::is_same_v<T, core::CancelCountdown>) {
