@@ -15,12 +15,6 @@ ScreenAction run_session_screen(core::Project& project) {
     ScreenAction action = ScreenAction::Quit;
 
     auto renderer = Renderer([&]() -> Element {
-        const std::string title =
-            project.entries().empty()
-                ? project.display_name()
-                : project.display_name() + "  (" +
-                  std::to_string(project.entries().size()) + " entries)";
-
         // Stats row
         const auto& entries = project.entries();
         int total     = static_cast<int>(entries.size());
@@ -41,16 +35,36 @@ ScreenAction run_session_screen(core::Project& project) {
             });
         };
 
+        // ── Project subtitle line ─────────────────────────────────────────
+        auto project_line = entries.empty()
+            ? hbox({text("  "), text(project.display_name()), filler()})
+            : hbox({
+                text("  "),
+                text(project.display_name()),
+                dim(text("   \xc2\xb7  ")),
+                dim(text(std::to_string(total) + " entries")),
+                filler(),
+              });
+
         return borderRounded(vbox({
-            // ── Title ────────────────────────────────────────────────
+            // ── App header ───────────────────────────────────────────
             text(""),
-            hbox({text("  "), bold(text(title)), filler()}),
+            hbox({
+                text("  "),
+                color(Color::Cyan, bold(text("s r t"))),
+                dim(text("  \xc2\xb7  ")),
+                bold(text("d u b b e r")),
+                filler(),
+            }),
+            text(""),
+
+            // ── Project context ──────────────────────────────────────
+            project_line,
             text(""),
 
             // ── Stats ────────────────────────────────────────────────
             hbox({
                 text("  "),
-                stat("total: ",     total),     text("   "),
                 stat("recorded: ",  recorded),  text("   "),
                 stat("processed: ", processed), text("   "),
                 stat("overflow: ",  overflow),  filler(),
