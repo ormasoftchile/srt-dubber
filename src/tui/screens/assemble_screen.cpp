@@ -81,7 +81,7 @@ Component make_assemble_component(
                                 std::lock_guard<std::mutex> lk(state->cmd_mutex);
                                 state->cmd_queue.emplace_back(cmd, std::move(payload));
                             }
-                            screen.PostEvent(Event::Custom);
+                            screen.Post(Event::Custom);
                         };
 
                         if (clips.empty()) {
@@ -143,11 +143,13 @@ Component make_assemble_component(
     }
 
     // Refresh thread — sleep in short increments so jthread destruction doesn't stall the main thread.
+    // Uses screen.Post() (thread-safe task_runner path) not PostEvent() (mutex-free buffer).
     state->refresh_thread = std::jthread([&screen](std::stop_token stop) {
         while (!stop.stop_requested()) {
-            screen.PostEvent(Event::Custom);
             for (int i = 0; i < 13 && !stop.stop_requested(); ++i)
                 std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            if (!stop.stop_requested())
+                screen.Post(Event::Custom);
         }
     });
 
@@ -278,7 +280,7 @@ ScreenAction run_assemble_screen(core::Project& project,
                                 std::lock_guard<std::mutex> lk(cmd_mutex);
                                 cmd_queue.emplace_back(cmd, std::move(payload));
                             }
-                            screen.PostEvent(Event::Custom);
+                            screen.Post(Event::Custom);
                         };
 
                         if (clips.empty()) {
@@ -349,8 +351,10 @@ ScreenAction run_assemble_screen(core::Project& project,
     // ------------------------------------------------------------------
     std::jthread refresh_thread([&](std::stop_token stop) {
         while (!stop.stop_requested()) {
-            screen.PostEvent(Event::Custom);
-            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+            for (int i = 0; i < 13 && !stop.stop_requested(); ++i)
+                std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            if (!stop.stop_requested())
+                screen.Post(Event::Custom);
         }
     });
 

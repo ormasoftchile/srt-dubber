@@ -102,12 +102,15 @@ Component make_recording_component(
     };
 
     // Background refresh thread — drives the elapsed-time counter and countdown.
-    // Sleep in short increments so jthread destruction doesn't stall the main thread.
+    // Uses screen.Post() (thread-safe task_runner path) instead of PostEvent()
+    // (which goes through the mutex-free MultiReceiverBuffer and causes data
+    // corruption when called from a background thread).
     state->refresh_thread = std::jthread([&screen](std::stop_token stop) {
         while (!stop.stop_requested()) {
-            screen.PostEvent(Event::Custom);
             for (int i = 0; i < 6 && !stop.stop_requested(); ++i)
                 std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            if (!stop.stop_requested())
+                screen.Post(Event::Custom);
         }
     });
 
@@ -143,9 +146,8 @@ Component make_recording_component(
                         if (sleep_or_abort(1000)) { state->countdown_state.store(CountdownState::None); return; }
                         state->countdown_state.store(CountdownState::One);
                         if (sleep_or_abort(1000)) { state->countdown_state.store(CountdownState::None); return; }
-                        screen.PostEvent(Event::Special("\x01"));
-                        state->countdown_state.store(CountdownState::Go);
-                        if (sleep_or_abort(300)) { state->countdown_state.store(CountdownState::None); return; }
+                        screen.Post(Event::Special("\x01"));
+                        state->countdown_state.store(CountdownState::Go); { state->countdown_state.store(CountdownState::None); return; }
                         state->countdown_state.store(CountdownState::None);
                     });
                 } else if constexpr (std::is_same_v<T, core::CancelCountdown>) {
@@ -308,8 +310,10 @@ ScreenAction run_recording_screen(core::Project& project,
     // Background refresh thread — drives the elapsed-time counter and countdown.
     std::jthread refresh_thread([&](std::stop_token stop) {
         while (!stop.stop_requested()) {
-            screen.PostEvent(Event::Custom);
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            for (int i = 0; i < 6 && !stop.stop_requested(); ++i)
+                std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            if (!stop.stop_requested())
+                screen.Post(Event::Custom);
         }
     });
 
@@ -344,9 +348,8 @@ ScreenAction run_recording_screen(core::Project& project,
                         if (sleep_or_abort(1s)) { countdown_state.store(CountdownState::None); return; }
                         countdown_state.store(CountdownState::One);
                         if (sleep_or_abort(1s)) { countdown_state.store(CountdownState::None); return; }
-                        screen.PostEvent(Event::Special("\x01"));
+                        screen.Post(Event::Special("\x01"));
                         countdown_state.store(CountdownState::Go);
-                        if (sleep_or_abort(300ms)) { countdown_state.store(CountdownState::None); return; }
                         countdown_state.store(CountdownState::None);
                     });
                 } else if constexpr (std::is_same_v<T, core::CancelCountdown>) {

@@ -9,7 +9,43 @@
 #include "ftxui/component/component.hpp"
 #include "ftxui/component/screen_interactive.hpp"
 
+#include <cstdlib>
+#include <fstream>
+#include <iostream>
+#include <streambuf>
+
 using namespace ftxui;
+
+// ── Optional stdout tee for terminal output debugging ────────────────────────
+// Enable: SRT_DEBUG_OUTPUT=/tmp/srt-debug.bin ./srt-dubber ...
+// Inspect: xxd /tmp/srt-debug.bin | less
+
+namespace {
+class TeeBuf : public std::streambuf {
+public:
+    TeeBuf(std::streambuf* primary, std::streambuf* secondary)
+        : primary_(primary), secondary_(secondary) {}
+protected:
+    int overflow(int c) override {
+        if (c == EOF) return c;
+        primary_->sputc(static_cast<char>(c));
+        secondary_->sputc(static_cast<char>(c));
+        return c;
+    }
+    std::streamsize xsputn(const char* s, std::streamsize n) override {
+        primary_->sputn(s, n);
+        secondary_->sputn(s, n);
+        return n;
+    }
+    int sync() override {
+        secondary_->pubsync();
+        return primary_->pubsync();
+    }
+private:
+    std::streambuf* primary_;
+    std::streambuf* secondary_;
+};
+} // namespace
 
 // ── Helper: build component for current NavState ─────────────────────────────
 
@@ -42,6 +78,18 @@ static Component build_component(
     : project_(project), video_path_(std::move(video_path)), recorder_(device_index) {}
 
 void ::App::run() {
+    // Optionally tee stdout to a file for escape-sequence debugging.
+    std::ofstream debug_file;
+    std::unique_ptr<TeeBuf> tee_buf;
+    std::streambuf* original_buf = nullptr;
+    if (const char* path = std::getenv("SRT_DEBUG_OUTPUT")) {
+        debug_file.open(path, std::ios::binary);
+        if (debug_file.is_open()) {
+            tee_buf = std::make_unique<TeeBuf>(std::cout.rdbuf(), debug_file.rdbuf());
+            original_buf = std::cout.rdbuf(tee_buf.get());
+        }
+    }
+
     auto screen = ScreenInteractive::Fullscreen();
     core::NavState nav;
     
@@ -82,9 +130,12 @@ void ::App::run() {
         
         // Build the new screen's component
         active = build_component(nav, screen, navigate, project_, recorder_, player_, video_path_);
-        
+
+        // Ensure the screen is clean before the next frame renders.
+        std::cout << "\033[?25l\033[H\033[2J" << std::flush;
+
         // Trigger a re-render
-        screen.PostEvent(Event::Custom);
+        screen.Post(Event::Custom);
     };
     
     // Build initial component (session screen)
@@ -103,4 +154,8 @@ void ::App::run() {
     
     // ONE call to Loop() — never exits until quit
     screen.Loop(router);
+
+    if (original_buf) {
+        std::cout.rdbuf(original_buf);
+    }
 }
