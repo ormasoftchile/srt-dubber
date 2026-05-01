@@ -11,6 +11,11 @@ RecordingEffectDispatcher::RecordingEffectDispatcher(AudioRecorder& recorder,
                                                      core::Project& project)
     : recorder_(recorder), player_(player), project_(project) {}
 
+void RecordingEffectDispatcher::wait_for_pending_start_() {
+    if (pending_start_.valid())
+        pending_start_.wait();
+}
+
 void RecordingEffectDispatcher::apply(const RecordingEffect& effect) {
     std::visit([&](const auto& v) {
         using T = std::decay_t<decltype(v)>;
@@ -22,18 +27,27 @@ void RecordingEffectDispatcher::apply(const RecordingEffect& effect) {
                               ? entries[v.idx].index : v.idx;
             current_take_path_ = project_.takes_dir() /
                                  (std::to_string(entry_index) + ".wav");
-            recorder_.start(current_take_path_);
+            // Kick off device init off the UI thread. The 3-second countdown
+            // masks ma_device_init/start latency (~hundreds of ms on built-in
+            // mics, up to ~2s for Bluetooth HFP profile switches).
+            wait_for_pending_start_();
+            auto path = current_take_path_;
+            pending_start_ = std::async(std::launch::async,
+                [this, path]() { return recorder_.start(path); });
 
         } else if constexpr (std::is_same_v<T, CancelCountdown>) {
-            // Bug fix: close the recorder if the device was opened for countdown warmup.
+            // Wait for the start to finish so stop() sees a fully-initialised device.
+            wait_for_pending_start_();
             if (recorder_.is_recording() || recorder_.is_warming_up())
                 recorder_.stop();
 
         } else if constexpr (std::is_same_v<T, ActivateCapture>) {
+            wait_for_pending_start_();
             recorder_.set_capture_active(true);
 
         } else if constexpr (std::is_same_v<T, StopRecording>) {
             current_idx_ = v.idx;
+            wait_for_pending_start_();
             recorder_.stop();
             // Use the path we opened (recorder has no output_path() accessor).
             project_.entries()[v.idx].raw_take_path = current_take_path_.string();

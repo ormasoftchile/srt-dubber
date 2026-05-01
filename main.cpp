@@ -8,7 +8,10 @@
 #include "tui/app.hpp"
 #include "audio/recorder.hpp"
 
-static constexpr const char* kVersion = "0.1.0";
+#ifndef SRT_DUBBER_VERSION
+#define SRT_DUBBER_VERSION "0.0.0-dev"
+#endif
+static constexpr const char* kVersion = SRT_DUBBER_VERSION;
 
 static void print_help() {
     std::cout <<
