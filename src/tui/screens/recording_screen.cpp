@@ -56,6 +56,7 @@ struct RecordingState {
     core::FlowState flow;
     std::atomic<CountdownState> countdown_state{CountdownState::None};
     std::jthread countdown_thread;
+    std::jthread refresh_thread;   // must outlive the component
     core::RecordingEffectDispatcher dispatcher;
     
     RecordingState(int start_idx, int total, bool has_take,
@@ -101,7 +102,7 @@ Component make_recording_component(
     };
 
     // Background refresh thread — drives the elapsed-time counter and countdown.
-    std::jthread refresh_thread([&screen](std::stop_token stop) {
+    state->refresh_thread = std::jthread([&screen](std::stop_token stop) {
         while (!stop.stop_requested()) {
             screen.PostEvent(Event::Custom);
             std::this_thread::sleep_for(std::chrono::milliseconds(100));

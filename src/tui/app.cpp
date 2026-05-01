@@ -95,7 +95,10 @@ void ::App::run() {
         return active ? active->Render() : text("");
     });
     router = CatchEvent(router, [&](Event e) -> bool {
-        return active ? active->OnEvent(e) : false;
+        // Hold a strong ref: navigate() may replace `active` (destroying the old
+        // component) while its OnEvent is still on the call stack — use-after-free.
+        Component current = active;
+        return current ? current->OnEvent(e) : false;
     });
     
     // ONE call to Loop() — never exits until quit

@@ -28,6 +28,7 @@ struct AssembleStateWrapper {
     std::mutex cmd_mutex;
     std::vector<std::pair<core::AssembleCmd, std::string>> cmd_queue;
     std::jthread assembly_thread;
+    std::jthread refresh_thread;   // must outlive the component
     
     AssembleStateWrapper() = default;
     
@@ -142,7 +143,7 @@ Component make_assemble_component(
     }
 
     // Refresh thread
-    std::jthread refresh_thread([&screen](std::stop_token stop) {
+    state->refresh_thread = std::jthread([&screen](std::stop_token stop) {
         while (!stop.stop_requested()) {
             screen.PostEvent(Event::Custom);
             std::this_thread::sleep_for(std::chrono::milliseconds(200));
