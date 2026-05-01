@@ -134,6 +134,11 @@ void ::App::run() {
         // Trigger a re-render — FTXUI owns stdout; never write raw escape
         // sequences outside its control as that corrupts its cursor-position
         // tracking and produces stray character artifacts on screen transitions.
+        // ForceFullClearOnNextDraw() makes the transition frame send \033[2K on
+        // every line (same as a terminal resize) so no previous-screen content
+        // leaks through on terminals that briefly render intermediate cursor
+        // positions (e.g., iTerm2).
+        screen.ForceFullClearOnNextDraw();
         screen.Post(Event::Custom);
     };
     
