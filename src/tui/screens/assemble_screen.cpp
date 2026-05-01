@@ -191,8 +191,8 @@ Component make_assemble_component(
         }
 
         return borderRounded(vbox({
-            text(""),
             app_header("Assemble"),
+            separator(),
             text(""),
             vbox(lines) | yframe | flex,
             footer,
@@ -399,8 +399,8 @@ ScreenAction run_assemble_screen(core::Project& project,
         }
 
         return borderRounded(vbox({
-            text(""),
             app_header("Assemble"),
+            separator(),
             text(""),
             vbox(lines) | yframe | flex,
             footer,

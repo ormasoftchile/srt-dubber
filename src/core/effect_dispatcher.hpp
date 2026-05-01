@@ -1,6 +1,7 @@
 #pragma once
 #include "recording_effects.hpp"
 #include <filesystem>
+#include <future>
 #include <vector>
 
 // Forward declarations — dispatcher calls into audio and project but doesn't
@@ -37,6 +38,15 @@ private:
 
     int current_idx_ = 0; ///< last known entry index, updated by StartCountdown/StopRecording
     std::filesystem::path current_take_path_; ///< path opened at StartCountdown, used by StopRecording
+
+    /// Outstanding recorder.start() call kicked off by StartCountdown.
+    /// Waited on before any subsequent recorder operation so device init
+    /// (which can take >1s for Bluetooth profile switches) overlaps the
+    /// 3-2-1 countdown instead of blocking the UI thread.
+    std::future<bool> pending_start_;
+
+    /// Block until any in-flight recorder.start() has completed.
+    void wait_for_pending_start_();
 };
 
 } // namespace core

@@ -33,10 +33,14 @@ public:
     static void list_devices();
 
 private:
-    // Samples to discard after device start to let the device (and Bluetooth
-    // profile switch) settle before writing audio. 2500 ms at 44100 Hz
-    // (AirPods Max HFP profile switch requires up to ~2s to stabilise).
-    static constexpr unsigned int kWarmupSamples = 44100 * 5 / 2;
+    // Samples to discard after device start to let the device settle before
+    // writing audio. 500 ms at 44100 Hz is enough to mask the typical pop /
+    // brief silence at the start of capture on built-in mics. Bluetooth
+    // headsets may need longer; the recording flow already overlaps device
+    // init with the 3-2-1 countdown, and the countdown holds on "1" until
+    // is_warming_up() returns false, so a longer per-device delay is absorbed
+    // by the countdown rather than appearing as post-Go! latency.
+    static constexpr unsigned int kWarmupSamples = 44100 / 2;
 
     int         m_device_index {-1};
 

@@ -25,6 +25,10 @@ target_link_libraries(srt_dubber_lib PUBLIC
   ftxui::component
 )
 
+target_compile_definitions(srt_dubber_lib PUBLIC
+  SRT_DUBBER_VERSION="${PROJECT_VERSION}"
+)
+
 target_include_directories(srt_dubber_lib PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_SOURCE_DIR}/vendor

@@ -47,11 +47,11 @@ Component make_session_component(core::Project& project, NavigateFunc navigate) 
 
         return borderRounded(vbox({
             // ── App header ───────────────────────────────────────────
-            text(""),
             app_header(),
-            text(""),
+            separator(),
 
             // ── Project context ──────────────────────────────────────
+            text(""),
             project_line,
             text(""),
 
@@ -123,11 +123,11 @@ ScreenAction run_session_screen(core::Project& project) {
 
         return borderRounded(vbox({
             // ── App header ───────────────────────────────────────────
-            text(""),
             app_header(),
-            text(""),
+            separator(),
 
             // ── Project context ──────────────────────────────────────
+            text(""),
             project_line,
             text(""),
 

@@ -48,12 +48,11 @@ void AudioRecorder::data_callback(ma_device* device,
             frameCount, std::memory_order_relaxed) + frameCount;
         if (discarded >= kWarmupSamples) {
             self->m_warmed_up.store(true, std::memory_order_release);
-            // Start the visible timer only once warm-up is complete.
-            using namespace std::chrono;
-            self->m_start_epoch_ms.store(
-                duration_cast<milliseconds>(
-                    system_clock::now().time_since_epoch()).count(),
-                std::memory_order_relaxed);
+            // NOTE: m_start_epoch_ms is reset by set_capture_active(true), not
+            // here. Warmup typically finishes during the 3-2-1 countdown; if
+            // we started the elapsed clock at warmup-complete, the timer would
+            // already read >0 by the time "Go!" fires. The clock must read 0
+            // exactly when capture begins.
         }
         return;
     }
@@ -211,6 +210,16 @@ bool AudioRecorder::stop()
 // ---------------------------------------------------------------------------
 void AudioRecorder::set_capture_active(bool active)
 {
+    if (active) {
+        // Reset the elapsed-time clock so it reads 0 at the moment capture
+        // actually begins (i.e. "Go!"), not at warmup-complete (which usually
+        // happens earlier, during the countdown).
+        using namespace std::chrono;
+        m_start_epoch_ms.store(
+            duration_cast<milliseconds>(
+                system_clock::now().time_since_epoch()).count(),
+            std::memory_order_relaxed);
+    }
     m_capture_active.store(active, std::memory_order_release);
 }
 

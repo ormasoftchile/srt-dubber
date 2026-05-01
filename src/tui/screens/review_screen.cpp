@@ -113,8 +113,8 @@ Component make_review_component(
         auto list = vbox(rows) | yframe | flex;
 
         return borderRounded(vbox({
-            text(""),
             app_header("Review"),
+            separator(),
             text(""),
             header,
             list,
@@ -223,8 +223,8 @@ ScreenAction run_review_screen(core::Project& project,
         auto list = vbox(rows) | yframe | flex;
 
         return borderRounded(vbox({
-            text(""),
             app_header("Review"),
+            separator(),
             text(""),
             header,
             list,

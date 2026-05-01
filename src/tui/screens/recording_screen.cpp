@@ -124,7 +124,7 @@ Component make_recording_component(
     };
 
     // Helper to apply effects from state machine.
-    auto apply_effects = [state, &screen, navigate, cancel_countdown](
+    auto apply_effects = [state, &screen, &recorder, navigate, cancel_countdown](
         const std::vector<core::RecordingEffect>& effects)
     {
         state->dispatcher.apply_all(effects);
@@ -133,7 +133,7 @@ Component make_recording_component(
                 using T = std::decay_t<decltype(v)>;
                 if constexpr (std::is_same_v<T, core::StartCountdown>) {
                     state->countdown_state.store(CountdownState::Three);
-                    state->countdown_thread = std::jthread([state, &screen](std::stop_token stop) {
+                    state->countdown_thread = std::jthread([state, &screen, &recorder](std::stop_token stop) {
                         using namespace std::chrono_literals;
                         // Sleep in short increments so stop is checked frequently.
                         auto sleep_or_abort = [&](int ms) -> bool {
@@ -146,6 +146,24 @@ Component make_recording_component(
                         if (sleep_or_abort(1000)) { state->countdown_state.store(CountdownState::None); return; }
                         state->countdown_state.store(CountdownState::One);
                         if (sleep_or_abort(1000)) { state->countdown_state.store(CountdownState::None); return; }
+
+                        // Hold on "1" until the recorder has finished warming up.
+                        // Device init runs in parallel with the countdown (kicked off
+                        // at StartCountdown); on built-in mics warmup is done well
+                        // before "1", on Bluetooth it may extend past it. Either way,
+                        // "Go!" appears only when sound capture is actually live, so
+                        // the user can rely on it as the cue to start talking.
+                        // Cap the wait so a stuck device can't hang the UI.
+                        constexpr int kMaxWarmupWaitMs = 5000;
+                        int waited = 0;
+                        while (recorder.is_warming_up() && waited < kMaxWarmupWaitMs) {
+                            if (stop.stop_requested()) { state->countdown_state.store(CountdownState::None); return; }
+                            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+                            waited += 16;
+                            // Repaint so the elapsed-time / status line stays fresh.
+                            screen.Post(Event::Custom);
+                        }
+
                         screen.Post(Event::Special("\x01"));
                         state->countdown_state.store(CountdownState::Go); { state->countdown_state.store(CountdownState::None); return; }
                         state->countdown_state.store(CountdownState::None);
