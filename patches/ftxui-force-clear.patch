@@ -1,0 +1,53 @@
+diff --git a/include/ftxui/component/app.hpp b/include/ftxui/component/app.hpp
+index 338c63fa..72478338 100644
+--- a/include/ftxui/component/app.hpp
++++ b/include/ftxui/component/app.hpp
+@@ -139,6 +139,11 @@ class App : public Screen {
+   /// animations are done.
+   void RequestAnimationFrame();
+ 
++  /// @brief Force the next draw to clear every line before rendering.
++  /// Call this before switching the active component to prevent stray-character
++  /// artifacts on terminals that render intermediate cursor positions.
++  void ForceFullClearOnNextDraw();
++
+   // Selection API:
+ 
+   /// @brief Try to get the unique lock about being able to capture the mouse.
+diff --git a/src/ftxui/component/app.cpp b/src/ftxui/component/app.cpp
+index 0b1dadcd..56db46d0 100644
+--- a/src/ftxui/component/app.cpp
++++ b/src/ftxui/component/app.cpp
+@@ -120,6 +120,11 @@ struct App::Internal {
+ 
+   bool frame_valid_ = false;
+ 
++  // Set to true to make the next Draw() use ResetPosition(clear=true),
++  // which sends \033[2K on every line and prevents stray-character artifacts
++  // when switching between screens inside a single ScreenInteractive loop.
++  bool force_full_clear_ = false;
++
+   bool force_handle_ctrl_c_ = true;
+   bool force_handle_ctrl_z_ = true;
+ 
+@@ -898,7 +903,8 @@ void App::Internal::Draw(Component component) {
+   TerminalSend("\033[?25l");
+ 
+   const bool resized =
+-      frame_count_ == 0 || (dimx != public_->dimx_) || (dimy != public_->dimy_);
++      force_full_clear_ || frame_count_ == 0 || (dimx != public_->dimx_) || (dimy != public_->dimy_);
++  force_full_clear_ = false;
+   TerminalSend(ResetCursorPosition());
+ 
+   if (frame_count_ != 0) {
+@@ -1430,6 +1436,10 @@ void App::RequestAnimationFrame() {
+   }
+ }
+ 
++void App::ForceFullClearOnNextDraw() {
++  internal_->force_full_clear_ = true;
++}
++
+ CapturedMouse App::CaptureMouse() {
+   if (internal_->mouse_captured) {
+     return nullptr;

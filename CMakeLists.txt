@@ -1,6 +1,16 @@
 cmake_minimum_required(VERSION 3.20)
 project(srt-dubber VERSION 0.1.0 LANGUAGES CXX)
 
+# Install git hooks so secret scanning runs before every commit.
+# Safe to run repeatedly; skipped in CI (no .git dir).
+if(EXISTS "${CMAKE_SOURCE_DIR}/.git")
+  execute_process(
+    COMMAND git config core.hooksPath .githooks
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+  )
+  message(STATUS "Git hooks configured (core.hooksPath = .githooks)")
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -32,6 +42,32 @@ FetchContent_Declare(ftxui
 set(FTXUI_BUILD_DOCS    OFF CACHE BOOL "" FORCE)
 set(FTXUI_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(ftxui)
+
+# Apply a minimal patch to FTXUI that adds ForceFullClearOnNextDraw().
+# This is needed to prevent stray-character artifacts (e.g. a brief 'e' flash)
+# on terminals like iTerm2 that briefly render intermediate cursor positions
+# during the ResetPosition cursor-up sequence between frames.
+# The sentinel file ensures the patch is only applied once per source tree.
+FetchContent_GetProperties(ftxui SOURCE_DIR ftxui_SOURCE_DIR)
+set(_ftxui_patch_sentinel "${ftxui_SOURCE_DIR}/.srt_dubber_patched")
+if(NOT EXISTS "${_ftxui_patch_sentinel}")
+  execute_process(
+    COMMAND patch -p1 --forward --batch
+            -i "${CMAKE_CURRENT_SOURCE_DIR}/patches/ftxui-force-clear.patch"
+    WORKING_DIRECTORY "${ftxui_SOURCE_DIR}"
+    RESULT_VARIABLE _patch_result
+    OUTPUT_VARIABLE _patch_output
+    ERROR_VARIABLE  _patch_error
+  )
+  if(_patch_result EQUAL 0)
+    file(TOUCH "${_ftxui_patch_sentinel}")
+    message(STATUS "Applied FTXUI patch: ForceFullClearOnNextDraw()")
+  else()
+    message(WARNING
+      "FTXUI patch failed (may already be applied or source changed).\n"
+      "${_patch_output}${_patch_error}")
+  endif()
+endif()
 
 # nlohmann/json
 FetchContent_Declare(json
