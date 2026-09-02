@@ -32,7 +32,13 @@ PrepareTakesResult prepare_takes(
     for (auto& entry : entries) {
         if (!entry.processed_take_path.empty() &&
             std::filesystem::exists(entry.processed_take_path)) {
-            result.clips.push_back({entry.processed_take_path, entry.start_ms, entry.index});
+            result.clips.push_back({
+                entry.processed_take_path,
+                entry.start_ms,
+                entry.index,
+                entry.processed_duration_ms,
+                entry.slot_duration_ms,
+            });
             continue;
         }
 
@@ -63,7 +69,13 @@ PrepareTakesResult prepare_takes(
             : processed.was_stretched
                 ? core::TakeStatus::stretched
                 : core::TakeStatus::ok;
-        result.clips.push_back({output, entry.start_ms, entry.index});
+        result.clips.push_back({
+            output,
+            entry.start_ms,
+            entry.index,
+            processed.duration_ms,
+            entry.slot_duration_ms,
+        });
     }
 
     result.success = true;

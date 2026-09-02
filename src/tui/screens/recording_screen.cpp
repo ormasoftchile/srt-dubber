@@ -55,6 +55,7 @@ enum class CountdownState { None, Three, Two, One, Go };
 struct RecordingState {
     core::FlowState flow;
     std::atomic<CountdownState> countdown_state{CountdownState::None};
+    std::string error_message;
     std::jthread countdown_thread;
     std::jthread refresh_thread;   // must outlive the component
     core::RecordingEffectDispatcher dispatcher;
@@ -156,7 +157,9 @@ Component make_recording_component(
                         // Cap the wait so a stuck device can't hang the UI.
                         constexpr int kMaxWarmupWaitMs = 5000;
                         int waited = 0;
-                        while (recorder.is_warming_up() && waited < kMaxWarmupWaitMs) {
+                        while ((state->dispatcher.recorder_start_pending()
+                                || recorder.is_warming_up())
+                               && waited < kMaxWarmupWaitMs) {
                             if (stop.stop_requested()) { state->countdown_state.store(CountdownState::None); return; }
                             std::this_thread::sleep_for(std::chrono::milliseconds(16));
                             waited += 16;
@@ -164,9 +167,22 @@ Component make_recording_component(
                             screen.Post(Event::Custom);
                         }
 
+                        if (state->dispatcher.recorder_start_pending()
+                            || !recorder.is_recording()
+                            || recorder.is_warming_up()) {
+                            state->countdown_state.store(CountdownState::None);
+                            screen.Post(Event::Special("\x02"));
+                            return;
+                        }
+
+                        state->countdown_state.store(CountdownState::Go);
                         screen.Post(Event::Special("\x01"));
-                        state->countdown_state.store(CountdownState::Go); { state->countdown_state.store(CountdownState::None); return; }
+                        if (sleep_or_abort(500)) {
+                            state->countdown_state.store(CountdownState::None);
+                            return;
+                        }
                         state->countdown_state.store(CountdownState::None);
+                        screen.Post(Event::Custom);
                     });
                 } else if constexpr (std::is_same_v<T, core::CancelCountdown>) {
                     cancel_countdown();
@@ -221,7 +237,21 @@ Component make_recording_component(
 
         // ── Body: subtitle always visible; countdown number overlaid beneath ──
         Element body;
-        if (cstate != CountdownState::None) {
+        if (!state->error_message.empty()) {
+            body = vbox({
+                text(""),
+                paragraphAlignCenter("\"" + display_text + "\"") | bold,
+                text(""),
+                hbox({
+                    filler(),
+                    color(Color::Red, paragraphAlignCenter(state->error_message)),
+                    filler(),
+                }),
+                text(""),
+                hbox({filler(), dim(text("Check Windows microphone access or select another device.")), filler()}),
+                filler(),
+            }) | flex;
+        } else if (cstate != CountdownState::None) {
             Element count_elem;
             if (cstate == CountdownState::Go) {
                 count_elem = bold(color(Color::Green, text("Go!")));
@@ -275,6 +305,16 @@ Component make_recording_component(
             state->flow = t.next;
             return true;
         }
+        if (event == Event::Special("\x02")) {
+            const bool device_started = state->dispatcher.recorder_is_recording();
+            state->error_message = device_started
+                ? "Microphone produced no audio samples during warm-up."
+                : "Could not start the selected microphone.";
+            auto t = core::recording_step(state->flow, core::RecordingCmd::CountdownFailed);
+            apply_effects(t.effects);
+            state->flow = t.next;
+            return true;
+        }
 
         if (!event.is_character()) return false;
         const auto ch = event.character();
@@ -283,6 +323,9 @@ Component make_recording_component(
         if (!cmd_opt.has_value()) return false;
 
         auto cmd = cmd_opt.value();
+        if (cmd == core::RecordingCmd::Record) {
+            state->error_message.clear();
+        }
         auto t = core::recording_step(state->flow, cmd);
         apply_effects(t.effects);
         state->flow = t.next;

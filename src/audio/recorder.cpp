@@ -115,9 +115,13 @@ bool AudioRecorder::start(const std::filesystem::path& output_wav)
         /*sampleRate=*/44100
     );
 
-    if (ma_encoder_init_file(output_wav.string().c_str(), &enc_cfg, m_encoder)
-            != MA_SUCCESS)
+    const ma_result encoder_result = ma_encoder_init_file(
+        output_wav.string().c_str(), &enc_cfg, m_encoder);
+    if (encoder_result != MA_SUCCESS) {
+        audio_log("[audio] Encoder initialization failed: %s\n",
+                  ma_result_description(encoder_result));
         return false;
+    }
 
     // --- capture device ---
     ma_device_config dev_cfg = ma_device_config_init(ma_device_type_capture);
@@ -150,7 +154,10 @@ bool AudioRecorder::start(const std::filesystem::path& output_wav)
         }
     }
 
-    if (ma_device_init(nullptr, &dev_cfg, m_device) != MA_SUCCESS) {
+    const ma_result device_result = ma_device_init(nullptr, &dev_cfg, m_device);
+    if (device_result != MA_SUCCESS) {
+        audio_log("[audio] Capture device initialization failed: %s\n",
+                  ma_result_description(device_result));
         ma_encoder_uninit(m_encoder);
         return false;
     }
@@ -164,7 +171,10 @@ bool AudioRecorder::start(const std::filesystem::path& output_wav)
             m_device->sampleRate);
     }
 
-    if (ma_device_start(m_device) != MA_SUCCESS) {
+    const ma_result start_result = ma_device_start(m_device);
+    if (start_result != MA_SUCCESS) {
+        audio_log("[audio] Capture device start failed: %s\n",
+                  ma_result_description(start_result));
         ma_device_uninit(m_device);
         ma_encoder_uninit(m_encoder);
         return false;
@@ -233,7 +243,12 @@ bool AudioRecorder::is_recording() const
 
 bool AudioRecorder::is_warming_up() const
 {
-    return !m_warmed_up.load(std::memory_order_relaxed);
+    return is_recording() && !m_warmed_up.load(std::memory_order_relaxed);
+}
+
+bool AudioRecorder::has_captured_audio() const
+{
+    return m_frames_written.load(std::memory_order_relaxed) > 0;
 }
 
 int64_t AudioRecorder::elapsed_ms() const

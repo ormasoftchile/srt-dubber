@@ -99,10 +99,12 @@ The application opens an interactive session:
   the current take.
 2. Press `v` from the session screen to review or redo recorded takes.
 3. Press `a` to assemble. Raw takes are trimmed, normalized, and sped up by at
-  most 8% when needed to fit their SRT slots. Overflowing takes are flagged.
+  most 8% when needed to fit their SRT slots. If a take still overflows, the
+  output timeline is extended with a held video frame and silent source audio.
 4. Assembly places every take at its SRT start time and mixes the new
-  voice-over with source audio, preserving video-item audio from Deckpilot.
-  A limiter prevents clipping. Videos without audio continue to work.
+  voice-over with source audio, shifting later narration by any inserted holds
+  and preserving video-item audio from Deckpilot. A limiter prevents clipping.
+  Videos without audio continue to work.
 
 The source video is not played inside the recording TUI.
 
@@ -125,6 +127,12 @@ srt-dubber --assemble-with-takes session-ID.srt session-ID.mp4 fixture-takes/
 This command is intended for tests and scripted workflows. Normal narration
 still uses the interactive microphone-recording flow.
 
+Remote microphone quality is controlled by the remote desktop client and the
+local input device. If redirected audio is narrowband, record PCM WAV takes on
+the local computer, name them `1.wav`, `2.wav`, and so on by subtitle index,
+then copy the directory to the remote computer and use `--assemble-with-takes`.
+This avoids remote microphone compression.
+
 ## Output layout
 
 Files are created beside the input SRT:
@@ -135,7 +143,7 @@ takes/               raw recordings (N.wav per subtitle)
 processed/           trimmed, normalized, and time-fitted takes (N.wav)
 output/
   voiceover.wav      assembled narration track
-  output.mp4         source video with the voice-over audio
+  <name>-dubbed.mp4  source video with the voice-over audio
 ```
 
 ## Project state

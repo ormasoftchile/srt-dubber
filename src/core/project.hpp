@@ -41,6 +41,7 @@ public:
     std::filesystem::path takes_dir()     const;
     std::filesystem::path processed_dir() const;
     std::filesystem::path output_dir()    const;
+    std::filesystem::path dubbed_video_path() const;
 
     /// Human-readable project name derived from the project file stem
     /// (e.g.  "episode01-project.json" → "episode01").

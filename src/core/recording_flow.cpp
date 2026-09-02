@@ -98,6 +98,13 @@ FlowTransition recording_step(FlowState state, RecordingCmd cmd) {
                 effects.push_back(ActivateCapture{});
             }
             break;
+
+        case RecordingCmd::CountdownFailed:
+            if (state.phase == FlowPhase::Countdown) {
+                result.next.phase = FlowPhase::Idle;
+                effects.push_back(CancelCountdown{});
+            }
+            break;
     }
 
     return result;

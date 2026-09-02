@@ -96,7 +96,7 @@ int main(int argc, char* argv[]) {
         }
 
         const auto voiceover_path = project.output_dir() / "voiceover.wav";
-        const auto output_path = project.output_dir() / "output.mp4";
+        const auto output_path = project.dubbed_video_path();
         ffmpeg::FfmpegAssembler assembler;
         const auto assembled = assembler.assemble(
             prepared.clips, 0, video_path, voiceover_path, output_path, {});
@@ -180,6 +180,10 @@ int main(int argc, char* argv[]) {
     }
 
     auto project = core::Project::load_or_create(argv[first_pos]);
+    if (project.entries().empty()) {
+        std::cerr << "Error: SRT contains no narration entries: " << argv[first_pos] << "\n";
+        return 1;
+    }
 
     std::filesystem::path video_path;
     if (first_pos + 1 < argc) {

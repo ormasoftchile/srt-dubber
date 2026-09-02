@@ -32,8 +32,18 @@ void RecordingEffectDispatcher::apply(const RecordingEffect& effect) {
             // mics, up to ~2s for Bluetooth HFP profile switches).
             wait_for_pending_start_();
             auto path = current_take_path_;
+            start_pending_.store(true, std::memory_order_release);
             pending_start_ = std::async(std::launch::async,
-                [this, path]() { return recorder_.start(path); });
+                [this, path]() {
+                    try {
+                        const bool started = recorder_.start(path);
+                        start_pending_.store(false, std::memory_order_release);
+                        return started;
+                    } catch (...) {
+                        start_pending_.store(false, std::memory_order_release);
+                        throw;
+                    }
+                });
 
         } else if constexpr (std::is_same_v<T, CancelCountdown>) {
             // Wait for the start to finish so stop() sees a fully-initialised device.
@@ -48,11 +58,19 @@ void RecordingEffectDispatcher::apply(const RecordingEffect& effect) {
         } else if constexpr (std::is_same_v<T, StopRecording>) {
             current_idx_ = v.idx;
             wait_for_pending_start_();
+            const bool has_audio = recorder_.has_captured_audio();
             recorder_.stop();
-            // Use the path we opened (recorder has no output_path() accessor).
             auto& entry = project_.entries()[v.idx];
-            entry.raw_take_path = current_take_path_.string();
+            if (has_audio) {
+                // Use the path we opened (recorder has no output_path() accessor).
+                entry.raw_take_path = current_take_path_.string();
+            } else {
+                std::error_code error;
+                std::filesystem::remove(current_take_path_, error);
+                entry.raw_take_path.clear();
+            }
             entry.processed_take_path.clear();
+            entry.raw_duration_ms = -1;
             entry.processed_duration_ms = -1;
             entry.status = TakeStatus::pending;
             project_.save();
@@ -96,6 +114,14 @@ void RecordingEffectDispatcher::apply(const RecordingEffect& effect) {
 void RecordingEffectDispatcher::apply_all(const std::vector<RecordingEffect>& effects) {
     for (const auto& e : effects)
         apply(e);
+}
+
+bool RecordingEffectDispatcher::recorder_is_recording() const {
+    return recorder_.is_recording();
+}
+
+bool RecordingEffectDispatcher::recorder_start_pending() const {
+    return start_pending_.load(std::memory_order_acquire);
 }
 
 } // namespace core

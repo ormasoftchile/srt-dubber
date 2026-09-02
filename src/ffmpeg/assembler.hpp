@@ -13,6 +13,15 @@ struct AssembleResult {
     std::string error;
 };
 
+TimelinePlan build_timeline_plan(const std::vector<ProcessedClip>& clips);
+
+std::string build_timeline_extension_command(
+    const std::filesystem::path& input,
+    const std::filesystem::path& output,
+    const std::vector<TimelineHold>& holds,
+    bool source_has_audio
+);
+
 std::string build_mux_command(
     const std::filesystem::path& video_input,
     const std::filesystem::path& voiceover_input,
