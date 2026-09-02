@@ -32,13 +32,20 @@ std::string build_mux_command(
     const std::filesystem::path& video_input,
     const std::filesystem::path& voiceover_input,
     const std::filesystem::path& video_output,
-    int64_t video_duration_ms)
+    int64_t video_duration_ms,
+    bool source_has_audio)
 {
     std::ostringstream cmd;
     cmd << "ffmpeg -y -i " << qa(video_input)
-        << " -i " << qa(voiceover_input)
-        << " -map 0:v:0 -map 1:a:0 -map_metadata 0"
-        << " -c:v copy -c:a aac";
+        << " -i " << qa(voiceover_input);
+    if (source_has_audio) {
+        cmd << " -filter_complex \"[0:a:0][1:a:0]"
+            << "amix=inputs=2:normalize=0,alimiter=limit=0.95[mixed]\""
+            << " -map 0:v:0 -map \"[mixed]\"";
+    } else {
+        cmd << " -map 0:v:0 -map 1:a:0";
+    }
+    cmd << " -map_metadata 0 -c:v copy -c:a aac";
     if (video_duration_ms > 0) {
         cmd << " -t " << (video_duration_ms / 1000)
             << "." << std::setfill('0') << std::setw(3)
@@ -51,6 +58,24 @@ std::string build_mux_command(
     cmd << " 2>/dev/null";
 #endif
     return cmd.str();
+}
+
+bool FfmpegAssembler::has_audio_stream(const std::filesystem::path& media)
+{
+    std::string cmd =
+    "ffprobe -v error -select_streams a:0 -show_entries stream=index "
+#ifdef _WIN32
+    "-of csv=p=0 " + qa(media) + " 2>NUL";
+#else
+    "-of csv=p=0 " + qa(media) + " 2>/dev/null";
+#endif
+
+    std::array<char, 32> buf{};
+    FILE* pipe = ::popen(cmd.c_str(), "r");
+    if (!pipe) return false;
+    const bool found = fgets(buf.data(), static_cast<int>(buf.size()), pipe) != nullptr;
+    ::pclose(pipe);
+    return found;
 }
 
 // ---------------------------------------------------------------------------
@@ -149,8 +174,9 @@ AssembleResult FfmpegAssembler::assemble(
     // ------------------------------------------------------------------
     // Step 2 — mux video + voiceover
     // ------------------------------------------------------------------
-        const std::string mux_cmd = build_mux_command(
-        video_input, voiceover_out, video_out, vid_dur);
+    const std::string mux_cmd = build_mux_command(
+        video_input, voiceover_out, video_out, vid_dur,
+        has_audio_stream(video_input));
 
     if (!run_asm(mux_cmd)) {
         res.error = "ffmpeg mux failed";
