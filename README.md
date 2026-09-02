@@ -114,6 +114,16 @@ pair directly to srt-dubber:
 srt-dubber session-ID.srt session-ID.mp4
 ```
 
+For deterministic automation, pre-recorded takes named by SRT index can be
+imported and assembled without opening the TUI:
+
+```sh
+srt-dubber --assemble-with-takes session-ID.srt session-ID.mp4 fixture-takes/
+```
+
+This command is intended for tests and scripted workflows. Normal narration
+still uses the interactive microphone-recording flow.
+
 ## Output layout
 
 Files are created beside the input SRT:

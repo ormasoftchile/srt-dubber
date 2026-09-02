@@ -17,6 +17,11 @@ struct PrepareTakesResult {
     std::string error;
 };
 
+std::string import_takes(
+    std::vector<core::ProjectEntry>& entries,
+    const std::filesystem::path& input_dir
+);
+
 PrepareTakesResult prepare_takes(
     std::vector<core::ProjectEntry>& entries,
     const std::filesystem::path& output_dir,
