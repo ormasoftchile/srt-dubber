@@ -95,6 +95,26 @@ static void test_reuses_existing_processed_take() {
     fs::remove_all(root);
 }
 
+static void test_imports_takes_by_srt_index() {
+    namespace fs = std::filesystem;
+    const auto root = fs::temp_directory_path() / "srt-dubber-take-import-test";
+    fs::remove_all(root);
+    fs::create_directories(root);
+    std::ofstream(root / "3.wav") << "first";
+    std::ofstream(root / "7.wav") << "second";
+
+    std::vector<core::ProjectEntry> entries(2);
+    entries[0].index = 3;
+    entries[1].index = 7;
+
+    const auto error = ffmpeg::import_takes(entries, root);
+
+    ASSERT_TRUE(error.empty());
+    ASSERT_EQ(entries[0].raw_take_path, (root / "3.wav").string());
+    ASSERT_EQ(entries[1].raw_take_path, (root / "7.wav").string());
+    fs::remove_all(root);
+}
+
 static void test_mux_command_selects_voiceover_audio() {
     const auto command = ffmpeg::build_mux_command(
         "source.mp4", "voiceover.wav", "output.mp4", 12345);
@@ -108,6 +128,7 @@ static void test_mux_command_selects_voiceover_audio() {
 int main() {
     test_processes_raw_take_and_updates_entry();
     test_reuses_existing_processed_take();
+    test_imports_takes_by_srt_index();
     test_mux_command_selects_voiceover_audio();
 
     if (failures == 0) {

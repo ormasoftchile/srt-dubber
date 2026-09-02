@@ -2,6 +2,24 @@
 
 namespace ffmpeg {
 
+std::string import_takes(
+    std::vector<core::ProjectEntry>& entries,
+    const std::filesystem::path& input_dir)
+{
+    for (auto& entry : entries) {
+        const auto take = input_dir / (std::to_string(entry.index) + ".wav");
+        if (!std::filesystem::exists(take)) {
+            return "take not found for subtitle " + std::to_string(entry.index) +
+                   ": " + take.string();
+        }
+        entry.raw_take_path = take.string();
+        entry.processed_take_path.clear();
+        entry.processed_duration_ms = -1;
+        entry.status = core::TakeStatus::pending;
+    }
+    return {};
+}
+
 PrepareTakesResult prepare_takes(
     std::vector<core::ProjectEntry>& entries,
     const std::filesystem::path& output_dir,

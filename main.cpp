@@ -5,6 +5,9 @@
 #include "srt/parser.hpp"
 #include "core/project.hpp"
 #include "core/resync.hpp"
+#include "ffmpeg/assembler.hpp"
+#include "ffmpeg/processor.hpp"
+#include "ffmpeg/take_pipeline.hpp"
 #include "tui/app.hpp"
 #include "audio/recorder.hpp"
 
@@ -21,6 +24,7 @@ static void print_help() {
         "USAGE:\n"
         "  srt-dubber [OPTIONS] <input.srt> [video.mp4]\n"
         "  srt-dubber [OPTIONS] --resync <new.srt>\n"
+        "  srt-dubber --assemble-with-takes <input.srt> <video.mp4> <takes-dir>\n"
         "\n"
         "ARGUMENTS:\n"
         "  <input.srt>   Path to the SRT subtitle file (required)\n"
@@ -29,6 +33,7 @@ static void print_help() {
         "OPTIONS:\n"
         "  --device N        Select audio input device by index (see --list-devices)\n"
         "  --resync <new.srt> Re-sync an existing project to a new SRT file\n"
+        "  --assemble-with-takes  Import N.wav files and assemble without the TUI\n"
         "  --list-devices    List available audio input devices and exit\n"
         "  --version         Print version and exit\n"
         "  --help, -h        Show this help and exit\n"
@@ -37,7 +42,8 @@ static void print_help() {
         "  srt-dubber subtitles.srt\n"
         "  srt-dubber subtitles.srt reference.mp4\n"
         "  srt-dubber --device 2 subtitles.srt\n"
-        "  srt-dubber --resync updated.srt\n";
+        "  srt-dubber --resync updated.srt\n"
+        "  srt-dubber --assemble-with-takes subtitles.srt video.mp4 fixture-takes\n";
 }
 
 int main(int argc, char* argv[]) {
@@ -53,6 +59,53 @@ int main(int argc, char* argv[]) {
 
     if (argc == 2 && std::string(argv[1]) == "--list-devices") {
         AudioRecorder::list_devices();
+        return 0;
+    }
+
+    if (argc >= 2 && std::string(argv[1]) == "--assemble-with-takes") {
+        if (argc != 5) {
+            std::cerr << "Usage: srt-dubber --assemble-with-takes <input.srt> <video.mp4> <takes-dir>\n";
+            return 1;
+        }
+
+        const std::filesystem::path srt_path = argv[2];
+        const std::filesystem::path video_path = argv[3];
+        const std::filesystem::path takes_dir = argv[4];
+        if (!std::filesystem::exists(srt_path) ||
+            !std::filesystem::exists(video_path) ||
+            !std::filesystem::is_directory(takes_dir)) {
+            std::cerr << "Error: SRT, video, or takes directory not found.\n";
+            return 1;
+        }
+
+        auto project = core::Project::load_or_create(srt_path);
+        const auto import_error = ffmpeg::import_takes(project.entries(), takes_dir);
+        if (!import_error.empty()) {
+            std::cerr << "Error: " << import_error << "\n";
+            return 1;
+        }
+
+        ffmpeg::FfmpegProcessor processor;
+        auto prepared = ffmpeg::prepare_takes(
+            project.entries(), project.processed_dir(), processor,
+            [](const std::string& line) { std::cout << line << "\n"; });
+        project.save();
+        if (!prepared.success || prepared.clips.empty()) {
+            std::cerr << "Error: " << (prepared.error.empty() ? "no takes to assemble" : prepared.error) << "\n";
+            return 1;
+        }
+
+        const auto voiceover_path = project.output_dir() / "voiceover.wav";
+        const auto output_path = project.output_dir() / "output.mp4";
+        ffmpeg::FfmpegAssembler assembler;
+        const auto assembled = assembler.assemble(
+            prepared.clips, 0, video_path, voiceover_path, output_path, {});
+        if (!assembled.success) {
+            std::cerr << "Error: " << assembled.error << "\n";
+            return 1;
+        }
+
+        std::cout << "Built: " << output_path << "\n";
         return 0;
     }
 
