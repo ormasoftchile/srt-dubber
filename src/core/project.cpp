@@ -249,6 +249,10 @@ std::filesystem::path Project::output_dir() const {
     return project_file_.parent_path() / "output";
 }
 
+std::filesystem::path Project::dubbed_video_path() const {
+    return output_dir() / (display_name() + "-dubbed.mp4");
+}
+
 std::string Project::display_name() const {
     std::string stem = project_file_.stem().string();  // e.g. "episode01-project"
     const std::string suffix = "-project";

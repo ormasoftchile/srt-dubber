@@ -29,16 +29,19 @@ static std::string q(const std::filesystem::path& p)
 }
 
 // ---------------------------------------------------------------------------
-// Step 1 – silence trim (leading + trailing, -50 dB threshold, 0.5 s)
+// Step 1 – trim silence only at the leading and trailing edges.
 // ---------------------------------------------------------------------------
 bool FfmpegProcessor::trim_silence(const std::filesystem::path& in,
                                    const std::filesystem::path& out)
 {
     std::string cmd =
         "ffmpeg -y -i " + q(in) +
-        " -af silenceremove="
-            "start_periods=1:start_silence=0.5:start_threshold=-50dB:"
-            "stop_periods=1:stop_silence=0.5:stop_threshold=-50dB "
+        " -af \"silenceremove="
+            "start_periods=1:start_duration=0.15:start_threshold=-40dB:start_silence=0.05,"
+            "areverse,"
+            "silenceremove=start_periods=1:start_duration=0.15:"
+            "start_threshold=-40dB:start_silence=0.05,"
+            "areverse\" "
 #ifdef _WIN32
         + q(out) + " 2>NUL";
 #else

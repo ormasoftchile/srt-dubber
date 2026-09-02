@@ -89,6 +89,13 @@ static void test_save_project_calls_save() {
     ASSERT_TRUE(true);
 }
 
+static void test_dubbed_video_path_uses_project_name() {
+    auto project = make_test_project();
+
+    ASSERT_TRUE(project.dubbed_video_path().filename() == "minimal-dubbed.mp4");
+    ASSERT_TRUE(project.dubbed_video_path().parent_path().filename() == "output");
+}
+
 static void test_clear_take_resets_entry() {
     AudioPlayer   player;
     AudioRecorder recorder;
@@ -148,14 +155,44 @@ static void test_new_recording_invalidates_processed_take() {
     ASSERT_EQ((int)entry.status, (int)core::TakeStatus::pending);
 }
 
+static void test_empty_recording_is_not_saved() {
+    AudioPlayer   player;
+    AudioRecorder recorder;
+    auto project = make_test_project();
+
+    core::RecordingEffectDispatcher dispatcher{recorder, player, project};
+    dispatcher.apply(core::StartCountdown{0});
+    dispatcher.apply(core::StopRecording{0, {}});
+
+    ASSERT_TRUE(project.entries()[0].raw_take_path.empty());
+}
+
+static void test_slow_recorder_start_reports_pending() {
+    AudioPlayer   player;
+    AudioRecorder recorder;
+    recorder.start_delay_ms = 100;
+    auto project = make_test_project();
+
+    core::RecordingEffectDispatcher dispatcher{recorder, player, project};
+    dispatcher.apply(core::StartCountdown{0});
+
+    ASSERT_TRUE(dispatcher.recorder_start_pending());
+    dispatcher.apply(core::ActivateCapture{});
+    ASSERT_FALSE(dispatcher.recorder_start_pending());
+    ASSERT_TRUE(dispatcher.recorder_is_recording());
+}
+
 // ── Main ────────────────────────────────────────────────────────────────────
 
 int main() {
     run_test("stop_playback_when_not_playing",  test_stop_playback_when_not_playing);
     run_test("save_project_calls_save",          test_save_project_calls_save);
+    run_test("dubbed video path uses project name", test_dubbed_video_path_uses_project_name);
     run_test("clear_take_resets_entry",          test_clear_take_resets_entry);
     run_test("apply_all_runs_in_order",          test_apply_all_runs_in_order);
     run_test("new recording invalidates processed take", test_new_recording_invalidates_processed_take);
+    run_test("empty recording is not saved", test_empty_recording_is_not_saved);
+    run_test("slow recorder start reports pending", test_slow_recorder_start_reports_pending);
 
     if (g_failures == 0) {
         std::printf("\nAll %d assertions passed.\n", g_tests);

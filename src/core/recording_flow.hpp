@@ -17,6 +17,7 @@ enum class RecordingCmd {
     Back,              // 'b'
     Quit,              // 'q'
     CountdownComplete, // synthetic: countdown timer fired, capture should begin
+    CountdownFailed,   // synthetic: device failed or produced no warm-up samples
 };
 
 /// Parse a single-character key string to a command. Returns nullopt if unrecognised.

@@ -27,6 +27,7 @@ public:
     // True during the initial discard window after start(). Only meaningful
     // while is_recording() is true.
     bool    is_warming_up() const;
+    bool    has_captured_audio() const;
     int64_t elapsed_ms()    const;
 
     // Print available capture devices to stderr and return.

@@ -200,6 +200,14 @@ static void test_countdown_complete_ignored_in_idle() {
     ASSERT_FALSE(has_effect<core::ActivateCapture>(t.effects));
 }
 
+static void test_countdown_failed_returns_idle_and_cancels() {
+    FlowState s{.current_idx = 0, .total = 3, .phase = FlowPhase::Countdown, .has_take = false};
+    auto t = recording_step(s, RecordingCmd::CountdownFailed);
+    ASSERT_EQ(t.next.phase, FlowPhase::Idle);
+    ASSERT_TRUE(has_effect<core::CancelCountdown>(t.effects));
+    ASSERT_FALSE(has_effect<core::ActivateCapture>(t.effects));
+}
+
 static void test_unknown_key() {
     auto cmd = parse_recording_cmd("z");
     ASSERT_FALSE(cmd.has_value());
@@ -238,6 +246,7 @@ int main() {
     run_test("quit_from_recording", test_quit_from_recording);
     run_test("countdown_complete", test_countdown_complete);
     run_test("countdown_complete_ignored_in_idle", test_countdown_complete_ignored_in_idle);
+    run_test("countdown_failed_returns_idle_and_cancels", test_countdown_failed_returns_idle_and_cancels);
     run_test("unknown_key", test_unknown_key);
     run_test("valid_keys_parse", test_valid_keys_parse);
     

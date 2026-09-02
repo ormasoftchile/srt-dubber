@@ -55,8 +55,24 @@ Component make_review_component(
 {
     auto& entries = project.entries();
     if (entries.empty()) {
-        navigate(ScreenAction::GoSession, 0);
-        return Renderer([]() { return text(""); });
+        auto renderer = Renderer([]() -> Element {
+            return borderRounded(vbox({
+                app_header("Review"),
+                separator(),
+                text(""),
+                hbox({text("  "), text("No narration entries to review.")}),
+                text(""),
+                hbox({text("  "), dim(text("q/b  back")), filler()}),
+                text(""),
+            }));
+        });
+        return CatchEvent(renderer, [navigate](Event event) -> bool {
+            if (!event.is_character()) return false;
+            const auto key = event.character();
+            if (key != "q" && key != "b") return false;
+            navigate(ScreenAction::GoSession, 0);
+            return true;
+        });
     }
 
     int start_idx = std::max(0, std::min(start_index, static_cast<int>(entries.size()) - 1));

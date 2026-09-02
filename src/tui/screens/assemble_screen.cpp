@@ -59,7 +59,7 @@ Component make_assemble_component(
 
                 if constexpr (std::is_same_v<T, core::SpawnAssembly>) {
                     auto voiceover_out = project.output_dir() / "voiceover.wav";
-                    auto video_out     = project.output_dir() / "output.mp4";
+                    auto video_out     = project.dubbed_video_path();
 
                     state->assembly_thread = std::jthread([state, &project, &screen, voiceover_out, video_out, video_path](std::stop_token) {
                         auto post_cmd = [state, &screen](core::AssembleCmd cmd, std::string payload = {}) {
@@ -256,7 +256,7 @@ ScreenAction run_assemble_screen(core::Project& project,
 
                 if constexpr (std::is_same_v<T, core::SpawnAssembly>) {
                     auto voiceover_out = project.output_dir() / "voiceover.wav";
-                    auto video_out     = project.output_dir() / "output.mp4";
+                    auto video_out     = project.dubbed_video_path();
 
                     assembly_thread = std::jthread([&, voiceover_out, video_out](std::stop_token) {
                         auto post_cmd = [&](core::AssembleCmd cmd, std::string payload = {}) {

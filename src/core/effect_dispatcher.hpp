@@ -1,5 +1,6 @@
 #pragma once
 #include "recording_effects.hpp"
+#include <atomic>
 #include <filesystem>
 #include <future>
 #include <vector>
@@ -31,6 +32,9 @@ public:
     /// Apply all effects from a transition in order.
     void apply_all(const std::vector<RecordingEffect>& effects);
 
+    bool recorder_is_recording() const;
+    bool recorder_start_pending() const;
+
 private:
     AudioRecorder& recorder_;
     AudioPlayer&   player_;
@@ -44,6 +48,7 @@ private:
     /// (which can take >1s for Bluetooth profile switches) overlaps the
     /// 3-2-1 countdown instead of blocking the UI thread.
     std::future<bool> pending_start_;
+    std::atomic<bool> start_pending_ {false};
 
     /// Block until any in-flight recorder.start() has completed.
     void wait_for_pending_start_();
