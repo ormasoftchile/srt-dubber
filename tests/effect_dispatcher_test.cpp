@@ -47,12 +47,15 @@ static void run_test(const char* name, void (*fn)()) {
 
 // ── Fixture helpers ─────────────────────────────────────────────────────────
 
-// Returns a Project loaded from the bundled minimal fixture.
-// Takes/processed/output dirs are created alongside tests/fixtures/minimal.srt.
+// Returns a Project created from a temporary copy of the bundled SRT fixture.
 static core::Project make_test_project() {
     namespace fs = std::filesystem;
-    // __FILE__ is the absolute path of this source file at compile time.
-    auto srt = fs::path(__FILE__).parent_path() / "fixtures" / "minimal.srt";
+    const auto source = fs::path(__FILE__).parent_path() / "fixtures" / "minimal.srt";
+    const auto root = fs::temp_directory_path() / "srt-dubber-effect-dispatcher-test";
+    fs::remove_all(root);
+    fs::create_directories(root);
+    const auto srt = root / "minimal.srt";
+    fs::copy_file(source, srt);
     return core::Project::load_or_create(srt);
 }
 
@@ -126,6 +129,25 @@ static void test_apply_all_runs_in_order() {
     ASSERT_TRUE(!player.is_playing());
 }
 
+static void test_new_recording_invalidates_processed_take() {
+    AudioPlayer   player;
+    AudioRecorder recorder;
+    auto project = make_test_project();
+    auto& entry = project.entries()[0];
+    entry.processed_take_path = "/old/processed.wav";
+    entry.processed_duration_ms = 1800;
+    entry.status = core::TakeStatus::ok;
+
+    core::RecordingEffectDispatcher dispatcher{recorder, player, project};
+    dispatcher.apply(core::StartCountdown{0});
+    dispatcher.apply(core::ActivateCapture{});
+    dispatcher.apply(core::StopRecording{0, {}});
+
+    ASSERT_TRUE(entry.processed_take_path.empty());
+    ASSERT_EQ(entry.processed_duration_ms, -1);
+    ASSERT_EQ((int)entry.status, (int)core::TakeStatus::pending);
+}
+
 // ── Main ────────────────────────────────────────────────────────────────────
 
 int main() {
@@ -133,6 +155,7 @@ int main() {
     run_test("save_project_calls_save",          test_save_project_calls_save);
     run_test("clear_take_resets_entry",          test_clear_take_resets_entry);
     run_test("apply_all_runs_in_order",          test_apply_all_runs_in_order);
+    run_test("new recording invalidates processed take", test_new_recording_invalidates_processed_take);
 
     if (g_failures == 0) {
         std::printf("\nAll %d assertions passed.\n", g_tests);

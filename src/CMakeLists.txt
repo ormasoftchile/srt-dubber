@@ -11,6 +11,7 @@ add_library(srt_dubber_lib STATIC
   audio/recorder.cpp
   audio/player.cpp
   ffmpeg/processor.cpp
+  ffmpeg/take_pipeline.cpp
   ffmpeg/assembler.cpp
   tui/app.cpp
   tui/screens/session_screen.cpp

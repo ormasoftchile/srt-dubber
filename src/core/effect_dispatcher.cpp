@@ -50,7 +50,11 @@ void RecordingEffectDispatcher::apply(const RecordingEffect& effect) {
             wait_for_pending_start_();
             recorder_.stop();
             // Use the path we opened (recorder has no output_path() accessor).
-            project_.entries()[v.idx].raw_take_path = current_take_path_.string();
+            auto& entry = project_.entries()[v.idx];
+            entry.raw_take_path = current_take_path_.string();
+            entry.processed_take_path.clear();
+            entry.processed_duration_ms = -1;
+            entry.status = TakeStatus::pending;
             project_.save();
 
         } else if constexpr (std::is_same_v<T, PlayTake>) {
