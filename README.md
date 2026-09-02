@@ -100,8 +100,9 @@ The application opens an interactive session:
 2. Press `v` from the session screen to review or redo recorded takes.
 3. Press `a` to assemble. Raw takes are trimmed, normalized, and sped up by at
   most 8% when needed to fit their SRT slots. Overflowing takes are flagged.
-4. Assembly places every take at its SRT start time and replaces the source
-  video's audio with the new voice-over track.
+4. Assembly places every take at its SRT start time and mixes the new
+  voice-over with source audio, preserving video-item audio from Deckpilot.
+  A limiter prevents clipping. Videos without audio continue to work.
 
 The source video is not played inside the recording TUI.
 

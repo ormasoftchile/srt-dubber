@@ -115,9 +115,9 @@ static void test_imports_takes_by_srt_index() {
     fs::remove_all(root);
 }
 
-static void test_mux_command_selects_voiceover_audio() {
+static void test_mux_command_selects_voiceover_when_source_has_no_audio() {
     const auto command = ffmpeg::build_mux_command(
-        "source.mp4", "voiceover.wav", "output.mp4", 12345);
+        "source.mp4", "voiceover.wav", "output.mp4", 12345, false);
 
     ASSERT_TRUE(command.find("-map 0:v:0") != std::string::npos);
     ASSERT_TRUE(command.find("-map 1:a:0") != std::string::npos);
@@ -125,11 +125,22 @@ static void test_mux_command_selects_voiceover_audio() {
     ASSERT_TRUE(command.find("-t 12.345") != std::string::npos);
 }
 
+static void test_mux_command_mixes_source_audio_with_narration() {
+    const auto command = ffmpeg::build_mux_command(
+        "source.mp4", "voiceover.wav", "output.mp4", 12345, true);
+
+    ASSERT_TRUE(command.find("[0:a:0][1:a:0]") != std::string::npos);
+    ASSERT_TRUE(command.find("amix=inputs=2:normalize=0") != std::string::npos);
+    ASSERT_TRUE(command.find("alimiter=limit=0.95[mixed]") != std::string::npos);
+    ASSERT_TRUE(command.find("-map \"[mixed]\"") != std::string::npos);
+}
+
 int main() {
     test_processes_raw_take_and_updates_entry();
     test_reuses_existing_processed_take();
     test_imports_takes_by_srt_index();
-    test_mux_command_selects_voiceover_audio();
+    test_mux_command_selects_voiceover_when_source_has_no_audio();
+    test_mux_command_mixes_source_audio_with_narration();
 
     if (failures == 0) {
         std::printf("All take pipeline tests passed.\n");

@@ -17,7 +17,8 @@ std::string build_mux_command(
     const std::filesystem::path& video_input,
     const std::filesystem::path& voiceover_input,
     const std::filesystem::path& video_output,
-    int64_t video_duration_ms
+    int64_t video_duration_ms,
+    bool source_has_audio
 );
 
 class FfmpegAssembler {
@@ -34,6 +35,7 @@ public:
 
 private:
     int64_t get_video_duration_ms(const std::filesystem::path& mp4);
+    bool has_audio_stream(const std::filesystem::path& media);
 };
 
 } // namespace ffmpeg
