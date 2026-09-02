@@ -7,66 +7,130 @@ Record your own voice-over for SRT-subtitled videos. One take per subtitle slot,
 | Dependency | Notes |
 |---|---|
 | CMake ≥ 3.20 | Build system |
-| C++20 compiler | clang++ 14+ or g++ 12+ |
-| ffmpeg + ffprobe | Must be on `PATH` |
+| C++20 compiler | clang++ 14+, g++ 12+, or Visual Studio 2022 |
+| Git and `patch` | CMake downloads and patches FTXUI during configuration |
+| ffmpeg + ffprobe | Runtime dependency; both must be on `PATH` |
 | miniaudio.h | Place in `vendor/` (see [vendor/README.md](vendor/README.md)) |
 
-> **macOS**: Xcode Command Line Tools provide clang++.  
-> **Linux**: `apt install cmake g++ ffmpeg`  
-> **Windows**: MinGW-w64 cross-compile supported; ffmpeg must be available in the build environment.
+The first CMake configure also needs internet access to download FTXUI and
+nlohmann/json.
 
-## Build
+## Build on Linux
+
+On Debian or Ubuntu:
+
+```sh
+sudo apt update
+sudo apt install cmake g++ ffmpeg git curl patch
+```
+
+Then, from the repository root:
 
 ```sh
 # 1. Download miniaudio (one-time)
-curl -L https://raw.githubusercontent.com/mackron/miniaudio/master/miniaudio.h \
+curl -L https://raw.githubusercontent.com/mackron/miniaudio/0.11.21/miniaudio.h \
      -o vendor/miniaudio.h
 
-# 2. Configure & build
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-cmake --build . -j$(nproc)
+# 2. Configure and build
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel
 ```
 
 The binary lands at `build/srt-dubber`.
 
-### Debug build (with ASan/UBSan)
+## Build on macOS
+
+Install Xcode Command Line Tools, CMake, and ffmpeg:
 
 ```sh
-cmake .. -DCMAKE_BUILD_TYPE=Debug
-cmake --build . -j$(nproc)
+xcode-select --install
+brew install cmake ffmpeg
+```
+
+Then run the same configure and build commands shown for Linux. macOS already
+provides Git, curl, and `patch` with the Command Line Tools.
+
+## Build on Windows
+
+For a native build, install Visual Studio 2022 with the **Desktop development
+with C++** workload, Git for Windows, and ffmpeg. Then run this from PowerShell:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-windows.ps1
+```
+
+The script locates Visual Studio's bundled CMake, enables Git's `patch` tool,
+downloads miniaudio when needed, and builds `build/Release/srt-dubber.exe`.
+Docker-based cross-compilation is also available; see
+[Windows development](docs/windows-dev.md).
+
+## Debug build
+
+Debug builds enable AddressSanitizer and UndefinedBehaviorSanitizer on
+non-MSVC compilers. Use a separate build directory so release and debug
+artifacts do not get mixed:
+
+```sh
+cmake -S . -B build-debug -DCMAKE_BUILD_TYPE=Debug
+cmake --build build-debug --parallel
 ```
 
 ## Usage
 
 ```sh
-# Launch interactive TUI to record one take per subtitle
-srt-dubber record input.srt
+# Record narration and assemble it into the source video
+srt-dubber input.srt input.mp4
 
-# Batch-process all recorded takes (trim silence, normalize, fit duration)
-srt-dubber process input.srt
+# Record without a video; assembly will require restarting with a video path
+srt-dubber input.srt
 
-# Assemble processed takes and mux into final video
-srt-dubber assemble input.srt input.mp4
+# Select a non-default microphone
+srt-dubber --list-devices
+srt-dubber --device 2 input.srt input.mp4
 
-# All three steps in sequence (TUI first, then auto batch)
-srt-dubber full input.srt input.mp4
+# Preserve matching takes after updating subtitle text or timing
+srt-dubber --resync updated.srt
+```
+
+The application opens an interactive session:
+
+1. Press `r` to enter the recording screen. Each SRT entry is one narration
+  slot; use `r` to record, `s` to stop, `n`/`b` to navigate, and `p` to play
+  the current take.
+2. Press `v` from the session screen to review or redo recorded takes.
+3. Press `a` to assemble. Raw takes are trimmed, normalized, and sped up by at
+  most 8% when needed to fit their SRT slots. Overflowing takes are flagged.
+4. Assembly places every take at its SRT start time and replaces the source
+  video's audio with the new voice-over track.
+
+The source video is not played inside the recording TUI.
+
+### Deckpilot handoff
+
+Deckpilot auto-record exports an MP4 and SRT with the same basename. Pass that
+pair directly to srt-dubber:
+
+```sh
+srt-dubber session-ID.srt session-ID.mp4
 ```
 
 ## Output layout
 
+Files are created beside the input SRT:
+
 ```
-takes/          raw recordings  (N.wav per subtitle)
-processed/      trimmed & normalized (N.wav)
+input-project.json   recording state and take metadata
+takes/               raw recordings (N.wav per subtitle)
+processed/           trimmed, normalized, and time-fitted takes (N.wav)
 output/
-  voiceover.wav assembled narration track
-  output.mp4    final video with voice-over
+  voiceover.wav      assembled narration track
+  output.mp4         source video with the voice-over audio
 ```
 
 ## Project state
 
-`project.json` tracks recording status per subtitle slot and is written next to
-the working directory. It is `.gitignore`d — do not commit it.
+`<srt-name>-project.json` tracks recording status per subtitle slot and is
+written beside the input SRT. It is `.gitignore`d — do not commit it.
 
 ## Architecture
 
@@ -83,5 +147,5 @@ vendor/
 ```
 
 Dependencies fetched automatically by CMake FetchContent:
-- [FTXUI v5.0.0](https://github.com/ArthurSonzogni/FTXUI) — TUI framework
+- [FTXUI](https://github.com/ArthurSonzogni/FTXUI) — TUI framework (pinned commit)
 - [nlohmann/json v3.11.3](https://github.com/nlohmann/json) — project.json serialization

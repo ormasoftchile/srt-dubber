@@ -37,7 +37,7 @@ include(cmake/windows-flags.cmake)
 include(FetchContent)
 FetchContent_Declare(ftxui
   GIT_REPOSITORY https://github.com/ArthurSonzogni/FTXUI
-  GIT_TAG        main
+  GIT_TAG        03224dcaf7f9a059dbb13cd2977d3d06729107ed
 )
 set(FTXUI_BUILD_DOCS    OFF CACHE BOOL "" FORCE)
 set(FTXUI_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -140,6 +140,12 @@ target_link_libraries(assemble-flow-tests PRIVATE srt_dubber_core)
 target_include_directories(assemble-flow-tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
 add_test(NAME assemble-flow-tests COMMAND assemble-flow-tests)
 
+# Take processing and mux command tests
+add_executable(take-pipeline-tests tests/take_pipeline_test.cpp)
+target_link_libraries(take-pipeline-tests PRIVATE srt_dubber_lib)
+target_include_directories(take-pipeline-tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+add_test(NAME take-pipeline-tests COMMAND take-pipeline-tests)
+
 # Review flow tests
 add_executable(review-flow-tests tests/review_flow_test.cpp)
 target_link_libraries(review-flow-tests PRIVATE srt_dubber_core)
@@ -158,8 +164,22 @@ target_link_libraries(app-harness PRIVATE srt_dubber_core nlohmann_json::nlohman
 target_include_directories(app-harness PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
 # Integration test: app-harness shell script
-add_test(
-  NAME app-harness-integration
-  COMMAND bash ${CMAKE_SOURCE_DIR}/tests/app_harness_test.sh
-  WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+configure_file(
+  ${CMAKE_SOURCE_DIR}/tests/app_harness_test.sh
+  ${CMAKE_BINARY_DIR}/app_harness_test.sh
+  @ONLY
+  NEWLINE_STYLE UNIX
 )
+if(WIN32)
+  add_test(
+    NAME app-harness-integration
+    COMMAND bash app_harness_test.sh ./$<CONFIG>/app-harness.exe
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+  )
+else()
+  add_test(
+    NAME app-harness-integration
+    COMMAND bash app_harness_test.sh $<TARGET_FILE:app-harness>
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+  )
+endif()

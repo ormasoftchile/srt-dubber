@@ -13,7 +13,18 @@ struct ProcessResult {
     std::string error;
 };
 
-class FfmpegProcessor {
+class TakeProcessor {
+public:
+    virtual ~TakeProcessor() = default;
+
+    virtual ProcessResult process_take(
+        const std::filesystem::path& input_wav,
+        const std::filesystem::path& output_wav,
+        int64_t slot_duration_ms
+    ) = 0;
+};
+
+class FfmpegProcessor final : public TakeProcessor {
 public:
     // Trim silence, loudnorm, optionally speed up to fit slot_duration_ms.
     // output_wav is written only on success.
@@ -21,7 +32,7 @@ public:
         const std::filesystem::path& input_wav,
         const std::filesystem::path& output_wav,
         int64_t slot_duration_ms
-    );
+    ) override;
 
 private:
     // Step 1 – remove leading/trailing silence.

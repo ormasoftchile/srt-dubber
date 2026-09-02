@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdio>
 #include <cstdlib>
+#include <iomanip>
 #include <sstream>
 #include <string>
 
@@ -25,6 +26,31 @@ static bool run_asm(const std::string& cmd)
 static std::string qa(const std::filesystem::path& p)
 {
     return "\"" + p.string() + "\"";
+}
+
+std::string build_mux_command(
+    const std::filesystem::path& video_input,
+    const std::filesystem::path& voiceover_input,
+    const std::filesystem::path& video_output,
+    int64_t video_duration_ms)
+{
+    std::ostringstream cmd;
+    cmd << "ffmpeg -y -i " << qa(video_input)
+        << " -i " << qa(voiceover_input)
+        << " -map 0:v:0 -map 1:a:0 -map_metadata 0"
+        << " -c:v copy -c:a aac";
+    if (video_duration_ms > 0) {
+        cmd << " -t " << (video_duration_ms / 1000)
+            << "." << std::setfill('0') << std::setw(3)
+            << (video_duration_ms % 1000);
+    }
+    cmd << " " << qa(video_output);
+#ifdef _WIN32
+    cmd << " 2>NUL";
+#else
+    cmd << " 2>/dev/null";
+#endif
+    return cmd.str();
 }
 
 // ---------------------------------------------------------------------------
@@ -123,15 +149,8 @@ AssembleResult FfmpegAssembler::assemble(
     // ------------------------------------------------------------------
     // Step 2 — mux video + voiceover
     // ------------------------------------------------------------------
-    std::string mux_cmd =
-        "ffmpeg -y -i " + qa(video_input) +
-        " -i " + qa(voiceover_out) +
-        " -c:v copy -c:a aac " +
-#ifdef _WIN32
-        qa(video_out) + " 2>NUL";
-#else
-        qa(video_out) + " 2>/dev/null";
-#endif
+        const std::string mux_cmd = build_mux_command(
+        video_input, voiceover_out, video_out, vid_dur);
 
     if (!run_asm(mux_cmd)) {
         res.error = "ffmpeg mux failed";

@@ -24,7 +24,7 @@ static void print_help() {
         "\n"
         "ARGUMENTS:\n"
         "  <input.srt>   Path to the SRT subtitle file (required)\n"
-        "  [video.mp4]   Optional reference video for playback\n"
+        "  [video.mp4]   Source video used when assembling the final MP4\n"
         "\n"
         "OPTIONS:\n"
         "  --device N        Select audio input device by index (see --list-devices)\n"

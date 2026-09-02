@@ -3,6 +3,8 @@
 
 #include "core/assemble_flow.hpp"
 #include "ffmpeg/assembler.hpp"
+#include "ffmpeg/processor.hpp"
+#include "ffmpeg/take_pipeline.hpp"
 #include "ffmpeg/types.hpp"
 
 #include "ftxui/component/component.hpp"
@@ -56,26 +58,10 @@ Component make_assemble_component(
                 using T = std::decay_t<decltype(v)>;
 
                 if constexpr (std::is_same_v<T, core::SpawnAssembly>) {
-                    // Collect clips
-                    std::vector<ffmpeg::ProcessedClip> clips;
-                    for (const auto& e : project.entries()) {
-                        std::filesystem::path p;
-                        if (!e.processed_take_path.empty()) {
-                            std::filesystem::path pp(e.processed_take_path);
-                            if (std::filesystem::exists(pp)) p = pp;
-                        }
-                        if (p.empty() && !e.raw_take_path.empty()) {
-                            std::filesystem::path rp(e.raw_take_path);
-                            if (std::filesystem::exists(rp)) p = rp;
-                        }
-                        if (!p.empty())
-                            clips.push_back({p, e.start_ms, e.index});
-                    }
-
                     auto voiceover_out = project.output_dir() / "voiceover.wav";
                     auto video_out     = project.output_dir() / "output.mp4";
 
-                    state->assembly_thread = std::jthread([state, &screen, clips, voiceover_out, video_out, video_path](std::stop_token) {
+                    state->assembly_thread = std::jthread([state, &project, &screen, voiceover_out, video_out, video_path](std::stop_token) {
                         auto post_cmd = [state, &screen](core::AssembleCmd cmd, std::string payload = {}) {
                             {
                                 std::lock_guard<std::mutex> lk(state->cmd_mutex);
@@ -84,7 +70,21 @@ Component make_assemble_component(
                             screen.Post(Event::Custom);
                         };
 
-                        if (clips.empty()) {
+                        ffmpeg::FfmpegProcessor processor;
+                        auto prepared = ffmpeg::prepare_takes(
+                            project.entries(), project.processed_dir(), processor,
+                            [&](const std::string& line) {
+                                post_cmd(core::AssembleCmd::ProgressLine, line);
+                            });
+                        project.save();
+
+                        if (!prepared.success) {
+                            post_cmd(core::AssembleCmd::ProgressLine,
+                                     "✗  Processing failed: " + prepared.error);
+                            post_cmd(core::AssembleCmd::AssemblyFailed, prepared.error);
+                            return;
+                        }
+                        if (prepared.clips.empty()) {
                             post_cmd(core::AssembleCmd::ProgressLine,
                                      "⚠  No takes found — record something first.");
                             post_cmd(core::AssembleCmd::AssemblyFailed, "No takes found.");
@@ -92,11 +92,11 @@ Component make_assemble_component(
                         }
 
                         post_cmd(core::AssembleCmd::ProgressLine,
-                                 "Starting assembly (" + std::to_string(clips.size()) + " clips)…");
+                                 "Starting assembly (" + std::to_string(prepared.clips.size()) + " clips)…");
 
                         ffmpeg::FfmpegAssembler assembler;
                         auto result = assembler.assemble(
-                            clips,
+                            prepared.clips,
                             /*video_duration_ms=*/0,
                             video_path,
                             voiceover_out,
@@ -255,26 +255,10 @@ ScreenAction run_assemble_screen(core::Project& project,
                 using T = std::decay_t<decltype(v)>;
 
                 if constexpr (std::is_same_v<T, core::SpawnAssembly>) {
-                    // Collect clips here so the lambda captures are clean.
-                    std::vector<ffmpeg::ProcessedClip> clips;
-                    for (const auto& e : project.entries()) {
-                        std::filesystem::path p;
-                        if (!e.processed_take_path.empty()) {
-                            std::filesystem::path pp(e.processed_take_path);
-                            if (std::filesystem::exists(pp)) p = pp;
-                        }
-                        if (p.empty() && !e.raw_take_path.empty()) {
-                            std::filesystem::path rp(e.raw_take_path);
-                            if (std::filesystem::exists(rp)) p = rp;
-                        }
-                        if (!p.empty())
-                            clips.push_back({p, e.start_ms, e.index});
-                    }
-
                     auto voiceover_out = project.output_dir() / "voiceover.wav";
                     auto video_out     = project.output_dir() / "output.mp4";
 
-                    assembly_thread = std::jthread([&, clips, voiceover_out, video_out](std::stop_token) {
+                    assembly_thread = std::jthread([&, voiceover_out, video_out](std::stop_token) {
                         auto post_cmd = [&](core::AssembleCmd cmd, std::string payload = {}) {
                             {
                                 std::lock_guard<std::mutex> lk(cmd_mutex);
@@ -283,7 +267,21 @@ ScreenAction run_assemble_screen(core::Project& project,
                             screen.Post(Event::Custom);
                         };
 
-                        if (clips.empty()) {
+                        ffmpeg::FfmpegProcessor processor;
+                        auto prepared = ffmpeg::prepare_takes(
+                            project.entries(), project.processed_dir(), processor,
+                            [&](const std::string& line) {
+                                post_cmd(core::AssembleCmd::ProgressLine, line);
+                            });
+                        project.save();
+
+                        if (!prepared.success) {
+                            post_cmd(core::AssembleCmd::ProgressLine,
+                                     "✗  Processing failed: " + prepared.error);
+                            post_cmd(core::AssembleCmd::AssemblyFailed, prepared.error);
+                            return;
+                        }
+                        if (prepared.clips.empty()) {
                             post_cmd(core::AssembleCmd::ProgressLine,
                                      "⚠  No takes found — record something first.");
                             post_cmd(core::AssembleCmd::AssemblyFailed, "No takes found.");
@@ -291,11 +289,11 @@ ScreenAction run_assemble_screen(core::Project& project,
                         }
 
                         post_cmd(core::AssembleCmd::ProgressLine,
-                                 "Starting assembly (" + std::to_string(clips.size()) + " clips)…");
+                                 "Starting assembly (" + std::to_string(prepared.clips.size()) + " clips)…");
 
                         ffmpeg::FfmpegAssembler assembler;
                         auto result = assembler.assemble(
-                            clips,
+                            prepared.clips,
                             /*video_duration_ms=*/0,
                             video_path,
                             voiceover_out,
