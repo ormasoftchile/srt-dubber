@@ -26,7 +26,8 @@ PrepareTakesResult prepare_takes(
     std::vector<core::ProjectEntry>& entries,
     const std::filesystem::path& output_dir,
     TakeProcessor& processor,
-    std::function<void(const std::string&)> progress_cb = {}
+    std::function<void(const std::string&)> progress_cb = {},
+    bool fit_to_slots = true
 );
 
 } // namespace ffmpeg

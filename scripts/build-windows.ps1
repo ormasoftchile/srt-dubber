@@ -32,6 +32,23 @@ function Find-CMake {
         }
     }
 
+    $visualStudioRoots = @(
+        (Join-Path $env:ProgramFiles "Microsoft Visual Studio\2022")
+        (Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\2022")
+    )
+    foreach ($root in $visualStudioRoots) {
+        if (-not (Test-Path $root)) {
+            continue
+        }
+
+        foreach ($installation in Get-ChildItem -Path $root -Directory) {
+            $bundled = Join-Path $installation.FullName "Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
+            if (Test-Path $bundled) {
+                return $bundled
+            }
+        }
+    }
+
     throw "CMake was not found. Add the CMake component to Visual Studio or install Kitware.CMake with winget."
 }
 

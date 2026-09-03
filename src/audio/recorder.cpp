@@ -100,6 +100,8 @@ bool AudioRecorder::start(const std::filesystem::path& output_wav)
     if (m_recording.load())
         return false;
 
+    m_last_error.clear();
+
     // Reset warm-up state for each new recording.
     m_warmed_up.store(false, std::memory_order_relaxed);
     m_warmup_samples_discarded.store(0, std::memory_order_relaxed);
@@ -118,8 +120,11 @@ bool AudioRecorder::start(const std::filesystem::path& output_wav)
     const ma_result encoder_result = ma_encoder_init_file(
         output_wav.string().c_str(), &enc_cfg, m_encoder);
     if (encoder_result != MA_SUCCESS) {
+        m_last_error = std::string("Could not create the recording file: ")
+            + ma_result_description(encoder_result);
         audio_log("[audio] Encoder initialization failed: %s\n",
                   ma_result_description(encoder_result));
+        *m_encoder = ma_encoder{};
         return false;
     }
 
@@ -156,9 +161,13 @@ bool AudioRecorder::start(const std::filesystem::path& output_wav)
 
     const ma_result device_result = ma_device_init(nullptr, &dev_cfg, m_device);
     if (device_result != MA_SUCCESS) {
+        m_last_error = std::string("Could not open the microphone: ")
+            + ma_result_description(device_result);
         audio_log("[audio] Capture device initialization failed: %s\n",
                   ma_result_description(device_result));
         ma_encoder_uninit(m_encoder);
+        *m_device = ma_device{};
+        *m_encoder = ma_encoder{};
         return false;
     }
 
@@ -173,10 +182,14 @@ bool AudioRecorder::start(const std::filesystem::path& output_wav)
 
     const ma_result start_result = ma_device_start(m_device);
     if (start_result != MA_SUCCESS) {
+        m_last_error = std::string("Could not start the microphone: ")
+            + ma_result_description(start_result);
         audio_log("[audio] Capture device start failed: %s\n",
                   ma_result_description(start_result));
         ma_device_uninit(m_device);
         ma_encoder_uninit(m_encoder);
+        *m_device = ma_device{};
+        *m_encoder = ma_encoder{};
         return false;
     }
 
@@ -260,6 +273,11 @@ int64_t AudioRecorder::elapsed_ms() const
     int64_t now = duration_cast<milliseconds>(
         system_clock::now().time_since_epoch()).count();
     return now - m_start_epoch_ms.load(std::memory_order_relaxed);
+}
+
+std::string AudioRecorder::last_error() const
+{
+    return m_last_error;
 }
 
 // ---------------------------------------------------------------------------

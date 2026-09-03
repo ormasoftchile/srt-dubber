@@ -62,18 +62,35 @@ static core::Project make_test_project() {
 // ── Test cases ──────────────────────────────────────────────────────────────
 
 static void test_stop_playback_when_not_playing() {
-    // player.is_playing() == false — dispatcher must not crash.
     AudioPlayer  player;
     AudioRecorder recorder;
     auto project = make_test_project();
 
+    player.play("/fake/take.wav");
+    player.simulate_end_of_file();
     ASSERT_FALSE(player.is_playing());
+    ASSERT_TRUE(player.has_open_resources());
 
     core::RecordingEffectDispatcher dispatcher{recorder, player, project};
     dispatcher.apply(core::StopPlayback{});
 
-    // stop() should NOT have been called (guard: only call if is_playing()).
-    ASSERT_EQ(player.stop_call_count, 0);
+    ASSERT_FALSE(player.has_open_resources());
+    ASSERT_EQ(player.stop_call_count, 1);
+}
+
+static void test_start_countdown_releases_finished_playback() {
+    AudioPlayer  player;
+    AudioRecorder recorder;
+    auto project = make_test_project();
+
+    player.play("/fake/take.wav");
+    player.simulate_end_of_file();
+    ASSERT_TRUE(player.has_open_resources());
+
+    core::RecordingEffectDispatcher dispatcher{recorder, player, project};
+    dispatcher.apply(core::StartCountdown{0});
+
+    ASSERT_FALSE(player.has_open_resources());
 }
 
 static void test_save_project_calls_save() {
@@ -186,6 +203,7 @@ static void test_slow_recorder_start_reports_pending() {
 
 int main() {
     run_test("stop_playback_when_not_playing",  test_stop_playback_when_not_playing);
+    run_test("start countdown releases finished playback", test_start_countdown_releases_finished_playback);
     run_test("save_project_calls_save",          test_save_project_calls_save);
     run_test("dubbed video path uses project name", test_dubbed_video_path_uses_project_name);
     run_test("clear_take_resets_entry",          test_clear_take_resets_entry);

@@ -21,6 +21,9 @@ void RecordingEffectDispatcher::apply(const RecordingEffect& effect) {
         using T = std::decay_t<decltype(v)>;
 
         if constexpr (std::is_same_v<T, StartCountdown>) {
+            // Playback may have reached EOF while its decoder still owns the
+            // take file. Release it before opening that path for overwrite.
+            player_.stop();
             current_idx_ = v.idx;
             auto& entries = project_.entries();
             int entry_index = (v.idx < (int)entries.size())
@@ -88,7 +91,7 @@ void RecordingEffectDispatcher::apply(const RecordingEffect& effect) {
                 player_.play(path);
 
         } else if constexpr (std::is_same_v<T, StopPlayback>) {
-            if (player_.is_playing()) player_.stop();
+            player_.stop();
 
         } else if constexpr (std::is_same_v<T, SaveTake>) {
             project_.entries()[v.idx].raw_take_path = v.path.string();

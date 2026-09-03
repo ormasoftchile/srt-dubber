@@ -90,6 +90,12 @@ srt-dubber --device 2 input.srt input.mp4
 
 # Preserve matching takes after updating subtitle text or timing
 srt-dubber --resync updated.srt
+
+# Process and measure every take without fitting the current SRT slots
+srt-dubber --prepare input.srt
+
+# Assemble an existing project after the final video timing is known
+srt-dubber --assemble input.srt input.mp4
 ```
 
 The application opens an interactive session:
@@ -110,12 +116,22 @@ The source video is not played inside the recording TUI.
 
 ### Deckpilot handoff
 
-Deckpilot auto-record exports an MP4 and SRT with the same basename. Pass that
-pair directly to srt-dubber:
+Deckpilot Auto-Record owns a narration-first handoff. It runs these stages
+automatically; the only interactive step is recording and reviewing each take:
 
 ```sh
-srt-dubber session-ID.srt session-ID.mp4
+srt-dubber narration.srt
+srt-dubber --prepare narration.srt
+# Deckpilot captures the presentation using the measured take durations,
+# then replaces the provisional SRT timestamps with the capture timestamps.
+srt-dubber --resync narration.srt
+srt-dubber --assemble narration.srt presentation.mp4
 ```
+
+`--prepare` trims and normalizes the takes without tempo-fitting them to the
+provisional cue slots. Their processed durations therefore remain authoritative
+for presentation pacing. `--resync` preserves matching takes after Deckpilot
+writes the final timing, and `--assemble` produces `output/narration-dubbed.mp4`.
 
 For deterministic automation, pre-recorded takes named by SRT index can be
 imported and assembled without opening the TUI:
@@ -140,7 +156,7 @@ Files are created beside the input SRT:
 ```
 input-project.json   recording state and take metadata
 takes/               raw recordings (N.wav per subtitle)
-processed/           trimmed, normalized, and time-fitted takes (N.wav)
+processed/           trimmed/normalized takes; standard assembly may slot-fit them
 output/
   voiceover.wav      assembled narration track
   <name>-dubbed.mp4  source video with the voice-over audio

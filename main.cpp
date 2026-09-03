@@ -24,6 +24,8 @@ static void print_help() {
         "USAGE:\n"
         "  srt-dubber [OPTIONS] <input.srt> [video.mp4]\n"
         "  srt-dubber [OPTIONS] --resync <new.srt>\n"
+        "  srt-dubber --prepare <input.srt>\n"
+        "  srt-dubber --assemble <input.srt> <video.mp4>\n"
         "  srt-dubber --assemble-with-takes <input.srt> <video.mp4> <takes-dir>\n"
         "\n"
         "ARGUMENTS:\n"
@@ -33,6 +35,8 @@ static void print_help() {
         "OPTIONS:\n"
         "  --device N        Select audio input device by index (see --list-devices)\n"
         "  --resync <new.srt> Re-sync an existing project to a new SRT file\n"
+        "  --prepare          Process and measure recorded takes without fitting SRT slots\n"
+        "  --assemble         Assemble an existing project with a recorded video\n"
         "  --assemble-with-takes  Import N.wav files and assemble without the TUI\n"
         "  --list-devices    List available audio input devices and exit\n"
         "  --version         Print version and exit\n"
@@ -43,6 +47,8 @@ static void print_help() {
         "  srt-dubber subtitles.srt reference.mp4\n"
         "  srt-dubber --device 2 subtitles.srt\n"
         "  srt-dubber --resync updated.srt\n"
+        "  srt-dubber --prepare narration.srt\n"
+        "  srt-dubber --assemble narration.srt presentation.mp4\n"
         "  srt-dubber --assemble-with-takes subtitles.srt video.mp4 fixture-takes\n";
 }
 
@@ -59,6 +65,78 @@ int main(int argc, char* argv[]) {
 
     if (argc == 2 && std::string(argv[1]) == "--list-devices") {
         AudioRecorder::list_devices();
+        return 0;
+    }
+
+    if (argc >= 2 && std::string(argv[1]) == "--prepare") {
+        if (argc != 3) {
+            std::cerr << "Usage: srt-dubber --prepare <input.srt>\n";
+            return 1;
+        }
+
+        const std::filesystem::path srt_path = argv[2];
+        if (!std::filesystem::exists(srt_path)) {
+            std::cerr << "Error: SRT file not found: " << srt_path << "\n";
+            return 1;
+        }
+
+        auto project = core::Project::load_or_create(srt_path);
+        ffmpeg::FfmpegProcessor processor;
+        auto prepared = ffmpeg::prepare_takes(
+            project.entries(), project.processed_dir(), processor,
+            [](const std::string& line) { std::cout << line << "\n"; },
+            false);
+        project.save();
+        if (!prepared.success || prepared.clips.size() != project.entries().size()) {
+            std::cerr << "Error: "
+                      << (prepared.error.empty() ? "record every narration cue before continuing"
+                                                 : prepared.error)
+                      << "\n";
+            return 1;
+        }
+
+        std::cout << "Prepared " << prepared.clips.size() << " narration take(s).\n";
+        return 0;
+    }
+
+    if (argc >= 2 && std::string(argv[1]) == "--assemble") {
+        if (argc != 4) {
+            std::cerr << "Usage: srt-dubber --assemble <input.srt> <video.mp4>\n";
+            return 1;
+        }
+
+        const std::filesystem::path srt_path = argv[2];
+        const std::filesystem::path video_path = argv[3];
+        if (!std::filesystem::exists(srt_path) || !std::filesystem::exists(video_path)) {
+            std::cerr << "Error: SRT or video file not found.\n";
+            return 1;
+        }
+
+        auto project = core::Project::load_or_create(srt_path);
+        ffmpeg::FfmpegProcessor processor;
+        auto prepared = ffmpeg::prepare_takes(
+            project.entries(), project.processed_dir(), processor,
+            [](const std::string& line) { std::cout << line << "\n"; });
+        project.save();
+        if (!prepared.success || prepared.clips.size() != project.entries().size()) {
+            std::cerr << "Error: "
+                      << (prepared.error.empty() ? "not all narration cues have recorded takes"
+                                                 : prepared.error)
+                      << "\n";
+            return 1;
+        }
+
+        const auto voiceover_path = project.output_dir() / "voiceover.wav";
+        const auto output_path = project.dubbed_video_path();
+        ffmpeg::FfmpegAssembler assembler;
+        const auto assembled = assembler.assemble(
+            prepared.clips, 0, video_path, voiceover_path, output_path, {});
+        if (!assembled.success) {
+            std::cerr << "Error: " << assembled.error << "\n";
+            return 1;
+        }
+
+        std::cout << "Built: " << output_path << "\n";
         return 0;
     }
 

@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <atomic>
 #include <cstdint>
+#include <string>
 
 // Forward-declare ma types to avoid pulling the heavy header into every TU.
 struct ma_device;
@@ -29,6 +30,7 @@ public:
     bool    is_warming_up() const;
     bool    has_captured_audio() const;
     int64_t elapsed_ms()    const;
+    std::string last_error() const;
 
     // Print available capture devices to stderr and return.
     static void list_devices();
@@ -56,6 +58,7 @@ private:
     std::atomic<uint64_t> m_warmup_samples_discarded {0};
     std::atomic<int32_t>  m_peak_sample              {0};
     std::atomic<uint64_t> m_frames_written           {0};
+    std::string           m_last_error;
 
     // Called by miniaudio on each captured chunk.
     static void data_callback(ma_device*, void*, const void*, unsigned int);
