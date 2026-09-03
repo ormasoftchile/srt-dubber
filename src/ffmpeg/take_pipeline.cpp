@@ -31,6 +31,13 @@ PrepareTakesResult prepare_takes(
     std::filesystem::create_directories(output_dir);
 
     for (auto& entry : entries) {
+        if (entry.processed_take_path.empty() || !std::filesystem::exists(entry.processed_take_path)) {
+            const auto proc_candidate = output_dir / (std::to_string(entry.index) + ".wav");
+            if (std::filesystem::exists(proc_candidate)) {
+                entry.processed_take_path = proc_candidate.string();
+            }
+        }
+
         if (!entry.processed_take_path.empty() &&
             std::filesystem::exists(entry.processed_take_path)) {
             result.clips.push_back({
@@ -41,6 +48,13 @@ PrepareTakesResult prepare_takes(
                 entry.slot_duration_ms,
             });
             continue;
+        }
+
+        if (entry.raw_take_path.empty() || !std::filesystem::exists(entry.raw_take_path)) {
+            const auto raw_candidate = output_dir.parent_path() / "takes" / (std::to_string(entry.index) + ".wav");
+            if (std::filesystem::exists(raw_candidate)) {
+                entry.raw_take_path = raw_candidate.string();
+            }
         }
 
         if (entry.raw_take_path.empty()) {

@@ -234,8 +234,14 @@ AssembleResult FfmpegAssembler::assemble(
         return res;
     }
 
+    if (!video_input.empty() && !std::filesystem::exists(video_input)) {
+        res.error = "video file not found: " + video_input.string();
+        return res;
+    }
+
     const TimelinePlan timeline = build_timeline_plan(clips);
-    const int total_steps = timeline.holds.empty() ? 2 : 3;
+    const bool has_video = !video_input.empty();
+    const int total_steps = !has_video ? 1 : (timeline.holds.empty() ? 2 : 3);
 
     // ------------------------------------------------------------------
     // Step 1 — build voiceover.wav
@@ -280,6 +286,11 @@ AssembleResult FfmpegAssembler::assemble(
     }
 
     if (progress_cb) progress_cb(1, total_steps);
+
+    if (!has_video) {
+        res.success = true;
+        return res;
+    }
 
     std::filesystem::path mux_input = video_input;
     std::filesystem::path extended_input;

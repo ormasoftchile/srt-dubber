@@ -195,7 +195,83 @@ Project Project::load_or_create(const std::filesystem::path& srt_path) {
             e.text             = s.text;
             proj.entries_.push_back(std::move(e));
         }
+    }
 
+    // Check if sibling project files exist (e.g. narration-project.json)
+    bool has_pending = false;
+    for (const auto& e : proj.entries_) {
+        if (e.raw_take_path.empty() || e.status == TakeStatus::pending) {
+            has_pending = true;
+            break;
+        }
+    }
+    if (has_pending) {
+        std::error_code ec;
+        for (const auto& dir_entry : std::filesystem::directory_iterator(base, ec)) {
+            if (!dir_entry.is_regular_file()) continue;
+            const auto p = dir_entry.path();
+            if (p != proj.project_file_ && p.extension() == ".json" &&
+                p.filename().string().ends_with("-project.json")) {
+                try {
+                    std::ifstream sf(p);
+                    if (sf.is_open()) {
+                        std::ostringstream ss;
+                        ss << sf.rdbuf();
+                        const std::string sjson = ss.str();
+                        for (const auto& obj : json_util::split_array(sjson)) {
+                            int idx = static_cast<int>(json_util::get_int(obj, "index"));
+                            std::string raw = json_util::get_string(obj, "raw_take_path");
+                            std::string proc = json_util::get_string(obj, "processed_take_path");
+                            int64_t proc_dur = json_util::get_int(obj, "processed_duration_ms", -1);
+                            int64_t raw_dur = json_util::get_int(obj, "raw_duration_ms", -1);
+                            std::string stat_str = json_util::get_string(obj, "status");
+                            for (auto& e : proj.entries_) {
+                                if (e.index == idx) {
+                                    if (e.raw_take_path.empty() && !raw.empty() && std::filesystem::exists(raw)) {
+                                        e.raw_take_path = raw;
+                                        e.raw_duration_ms = raw_dur;
+                                    }
+                                    if (e.processed_take_path.empty() && !proc.empty() && std::filesystem::exists(proc)) {
+                                        e.processed_take_path = proc;
+                                        e.processed_duration_ms = proc_dur;
+                                        e.status = take_status_from_string(stat_str);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (...) {
+                    // ignore malformed sibling project file
+                }
+            }
+        }
+    }
+
+    // Auto-discover any recorded takes on disk in takes/ and processed/
+    const auto takes_dir = base / "takes";
+    const auto processed_dir = base / "processed";
+    bool any_updated = false;
+    for (auto& e : proj.entries_) {
+        if (e.raw_take_path.empty() || !std::filesystem::exists(e.raw_take_path)) {
+            const auto raw_candidate = takes_dir / (std::to_string(e.index) + ".wav");
+            if (std::filesystem::exists(raw_candidate)) {
+                e.raw_take_path = raw_candidate.string();
+                any_updated = true;
+            }
+        }
+        if (e.processed_take_path.empty() || !std::filesystem::exists(e.processed_take_path)) {
+            const auto proc_candidate = processed_dir / (std::to_string(e.index) + ".wav");
+            if (std::filesystem::exists(proc_candidate)) {
+                e.processed_take_path = proc_candidate.string();
+                if (e.status == TakeStatus::pending) {
+                    e.status = TakeStatus::ok;
+                }
+                any_updated = true;
+            }
+        }
+    }
+
+    if (!std::filesystem::exists(proj.project_file_) || any_updated) {
         proj.save();
     }
 
