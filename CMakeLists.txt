@@ -77,6 +77,26 @@ FetchContent_Declare(json
 set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(json)
 
+# miniaudio (single-header audio library, gitignored)
+set(_miniaudio_header "${CMAKE_SOURCE_DIR}/vendor/miniaudio.h")
+if(NOT EXISTS "${_miniaudio_header}")
+  message(STATUS "vendor/miniaudio.h not found; downloading miniaudio 0.11.21...")
+  file(DOWNLOAD
+    "https://raw.githubusercontent.com/mackron/miniaudio/0.11.21/miniaudio.h"
+    "${_miniaudio_header}"
+    STATUS _miniaudio_status
+    SHOW_PROGRESS
+  )
+  list(GET _miniaudio_status 0 _miniaudio_code)
+  if(NOT _miniaudio_code EQUAL 0)
+    file(REMOVE "${_miniaudio_header}")
+    message(FATAL_ERROR
+      "Failed to download miniaudio.h. Please download it manually:\n"
+      "  curl -L https://raw.githubusercontent.com/mackron/miniaudio/0.11.21/miniaudio.h -o vendor/miniaudio.h"
+    )
+  endif()
+endif()
+
 # Core-only library (no TUI, no audio) for harness and tests
 add_library(srt_dubber_core STATIC
   src/core/recording_flow.cpp

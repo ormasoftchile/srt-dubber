@@ -107,8 +107,12 @@ int main(int argc, char* argv[]) {
 
         const std::filesystem::path srt_path = argv[2];
         const std::filesystem::path video_path = argv[3];
-        if (!std::filesystem::exists(srt_path) || !std::filesystem::exists(video_path)) {
-            std::cerr << "Error: SRT or video file not found.\n";
+        if (!std::filesystem::exists(srt_path)) {
+            std::cerr << "Error: SRT file not found: " << srt_path.string() << "\n";
+            return 1;
+        }
+        if (!std::filesystem::exists(video_path)) {
+            std::cerr << "Error: Video file not found: " << video_path.string() << "\n";
             return 1;
         }
 
@@ -149,10 +153,16 @@ int main(int argc, char* argv[]) {
         const std::filesystem::path srt_path = argv[2];
         const std::filesystem::path video_path = argv[3];
         const std::filesystem::path takes_dir = argv[4];
-        if (!std::filesystem::exists(srt_path) ||
-            !std::filesystem::exists(video_path) ||
-            !std::filesystem::is_directory(takes_dir)) {
-            std::cerr << "Error: SRT, video, or takes directory not found.\n";
+        if (!std::filesystem::exists(srt_path)) {
+            std::cerr << "Error: SRT file not found: " << srt_path.string() << "\n";
+            return 1;
+        }
+        if (!std::filesystem::exists(video_path)) {
+            std::cerr << "Error: Video file not found: " << video_path.string() << "\n";
+            return 1;
+        }
+        if (!std::filesystem::is_directory(takes_dir)) {
+            std::cerr << "Error: Takes directory not found: " << takes_dir.string() << "\n";
             return 1;
         }
 

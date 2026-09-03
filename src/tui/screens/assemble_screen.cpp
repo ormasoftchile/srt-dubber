@@ -105,16 +105,24 @@ Component make_assemble_component(
                                 if (cur == 1)
                                     post_cmd(core::AssembleCmd::ProgressLine,
                                              "✓  Voiceover mix complete.");
-                                if (cur == total)
+                                if (cur == total && !video_path.empty())
                                     post_cmd(core::AssembleCmd::ProgressLine,
                                              "✓  Video mux complete.");
                             }
                         );
 
+                        const auto final_out = video_path.empty() ? voiceover_out : video_out;
                         if (result.success) {
-                            post_cmd(core::AssembleCmd::ProgressLine,
-                                     "✓  Done → " + video_out.string());
-                            post_cmd(core::AssembleCmd::AssemblyDone, video_out.string());
+                            if (video_path.empty()) {
+                                post_cmd(core::AssembleCmd::ProgressLine,
+                                         "✓  Done → " + voiceover_out.string() + " (voiceover track)");
+                                post_cmd(core::AssembleCmd::ProgressLine,
+                                         "   (No video file provided at launch; voiceover audio assembled)");
+                            } else {
+                                post_cmd(core::AssembleCmd::ProgressLine,
+                                         "✓  Done → " + video_out.string());
+                            }
+                            post_cmd(core::AssembleCmd::AssemblyDone, final_out.string());
                         } else {
                             post_cmd(core::AssembleCmd::ProgressLine,
                                      "✗  Assembly failed: " + result.error);

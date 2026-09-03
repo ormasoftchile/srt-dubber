@@ -288,6 +288,31 @@ static void test_processing_preserves_signal_after_internal_pause() {
     fs::remove_all(root);
 }
 
+static void test_assembler_handles_empty_video_cleanly() {
+    namespace fs = std::filesystem;
+    const auto root = fs::temp_directory_path() / "srt-dubber-assembler-empty-video-test";
+    fs::remove_all(root);
+    fs::create_directories(root);
+    const auto take_path = root / "take1.wav";
+    write_test_wav(take_path);
+
+    ffmpeg::FfmpegAssembler assembler;
+    std::vector<ffmpeg::ProcessedClip> clips = {
+        {.path = take_path.string(), .start_ms = 0, .duration_ms = 1000, .slot_duration_ms = 1000}
+    };
+
+    const auto voiceover_path = root / "voiceover.wav";
+    auto res_empty = assembler.assemble(clips, 0, "", voiceover_path, root / "output.mp4", {});
+    ASSERT_TRUE(res_empty.success);
+    ASSERT_TRUE(fs::exists(voiceover_path));
+
+    auto res_nonexistent = assembler.assemble(clips, 0, "nonexistent-video.mp4", voiceover_path, root / "output.mp4", {});
+    ASSERT_TRUE(!res_nonexistent.success);
+    ASSERT_TRUE(res_nonexistent.error.find("video file not found") != std::string::npos);
+
+    fs::remove_all(root);
+}
+
 int main() {
     test_processes_raw_take_and_updates_entry();
     test_prepares_narration_without_fitting_provisional_slot();
@@ -298,6 +323,7 @@ int main() {
     test_mux_command_mixes_source_audio_with_narration();
     test_timeline_extension_holds_video_and_source_audio();
     test_processing_preserves_signal_after_internal_pause();
+    test_assembler_handles_empty_video_cleanly();
 
     if (failures == 0) {
         std::printf("All take pipeline tests passed.\n");
