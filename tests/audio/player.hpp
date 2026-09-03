@@ -12,17 +12,21 @@ public:
     bool play(const std::filesystem::path& wav_path) {
         last_play_path = wav_path;
         m_playing = true;
+        m_has_open_resources = true;
         play_call_count++;
         return true;
     }
 
     bool stop() {
         m_playing = false;
+        m_has_open_resources = false;
         stop_call_count++;
         return true;
     }
 
     bool is_playing() const { return m_playing; }
+    bool has_open_resources() const { return m_has_open_resources; }
+    void simulate_end_of_file() { m_playing = false; }
 
     // Observability for tests
     std::filesystem::path last_play_path;
@@ -31,4 +35,5 @@ public:
 
 private:
     std::atomic<bool> m_playing {false};
+    bool m_has_open_resources {false};
 };

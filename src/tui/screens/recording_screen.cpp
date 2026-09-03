@@ -238,6 +238,10 @@ Component make_recording_component(
         // ── Body: subtitle always visible; countdown number overlaid beneath ──
         Element body;
         if (!state->error_message.empty()) {
+            const std::string recovery_hint = state->error_message.starts_with(
+                "Could not create the recording file:")
+                ? "Check that the take folder is writable and the WAV file is not open."
+                : "Check Windows microphone access or select another device.";
             body = vbox({
                 text(""),
                 paragraphAlignCenter("\"" + display_text + "\"") | bold,
@@ -248,7 +252,7 @@ Component make_recording_component(
                     filler(),
                 }),
                 text(""),
-                hbox({filler(), dim(text("Check Windows microphone access or select another device.")), filler()}),
+                hbox({filler(), dim(text(recovery_hint)), filler()}),
                 filler(),
             }) | flex;
         } else if (cstate != CountdownState::None) {
@@ -297,7 +301,7 @@ Component make_recording_component(
         }));
     });
 
-    return CatchEvent(renderer, [state, sync_flow, apply_effects](Event event) -> bool {
+    return CatchEvent(renderer, [state, sync_flow, apply_effects, &recorder](Event event) -> bool {
         // Handle special CountdownComplete event
         if (event == Event::Special("\x01")) {
             auto t = core::recording_step(state->flow, core::RecordingCmd::CountdownComplete);
@@ -307,9 +311,13 @@ Component make_recording_component(
         }
         if (event == Event::Special("\x02")) {
             const bool device_started = state->dispatcher.recorder_is_recording();
-            state->error_message = device_started
-                ? "Microphone produced no audio samples during warm-up."
-                : "Could not start the selected microphone.";
+            if (device_started) {
+                state->error_message = "Microphone produced no audio samples during warm-up.";
+            } else if (!recorder.last_error().empty()) {
+                state->error_message = recorder.last_error();
+            } else {
+                state->error_message = "Could not start the selected microphone.";
+            }
             auto t = core::recording_step(state->flow, core::RecordingCmd::CountdownFailed);
             apply_effects(t.effects);
             state->flow = t.next;

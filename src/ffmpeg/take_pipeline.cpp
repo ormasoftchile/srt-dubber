@@ -24,7 +24,8 @@ PrepareTakesResult prepare_takes(
     std::vector<core::ProjectEntry>& entries,
     const std::filesystem::path& output_dir,
     TakeProcessor& processor,
-    std::function<void(const std::string&)> progress_cb)
+    std::function<void(const std::string&)> progress_cb,
+    bool fit_to_slots)
 {
     PrepareTakesResult result;
     std::filesystem::create_directories(output_dir);
@@ -56,7 +57,8 @@ PrepareTakesResult prepare_takes(
 
         const auto output = output_dir / (std::to_string(entry.index) + ".wav");
         const auto processed = processor.process_take(
-            entry.raw_take_path, output, entry.slot_duration_ms);
+            entry.raw_take_path, output,
+            fit_to_slots ? entry.slot_duration_ms : 0);
         if (!processed.success) {
             result.error = "take " + std::to_string(entry.index) + ": " + processed.error;
             return result;

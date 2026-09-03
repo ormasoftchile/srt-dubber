@@ -30,13 +30,15 @@ class FakeProcessor final : public ffmpeg::TakeProcessor {
 public:
     ffmpeg::ProcessResult next_result;
     int calls = 0;
+    int64_t last_slot_duration_ms = -1;
 
     ffmpeg::ProcessResult process_take(
         const std::filesystem::path&,
         const std::filesystem::path& output,
-        int64_t) override
+        int64_t slot_duration_ms) override
     {
         ++calls;
+        last_slot_duration_ms = slot_duration_ms;
         if (next_result.success) {
             std::ofstream(output) << "processed";
         }
@@ -139,6 +141,31 @@ static void test_processes_raw_take_and_updates_entry() {
     ASSERT_EQ(entries[0].processed_duration_ms, int64_t{2400});
     ASSERT_EQ(entries[0].status, core::TakeStatus::stretched);
     ASSERT_TRUE(fs::exists(entries[0].processed_take_path));
+    fs::remove_all(root);
+}
+
+static void test_prepares_narration_without_fitting_provisional_slot() {
+    namespace fs = std::filesystem;
+    const auto root = fs::temp_directory_path() / "srt-dubber-narration-prepare-test";
+    fs::remove_all(root);
+    fs::create_directories(root / "takes");
+    std::ofstream(root / "takes" / "1.wav") << "raw";
+
+    std::vector<core::ProjectEntry> entries(1);
+    entries[0].index = 1;
+    entries[0].slot_duration_ms = 2500;
+    entries[0].raw_take_path = (root / "takes" / "1.wav").string();
+
+    FakeProcessor processor;
+    processor.next_result = {.success = true, .duration_ms = 4123};
+
+    const auto result = ffmpeg::prepare_takes(
+        entries, root / "processed", processor, {}, false);
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(processor.last_slot_duration_ms, int64_t{0});
+    ASSERT_EQ(entries[0].processed_duration_ms, int64_t{4123});
+    ASSERT_EQ(entries[0].status, core::TakeStatus::ok);
     fs::remove_all(root);
 }
 
@@ -263,6 +290,7 @@ static void test_processing_preserves_signal_after_internal_pause() {
 
 int main() {
     test_processes_raw_take_and_updates_entry();
+    test_prepares_narration_without_fitting_provisional_slot();
     test_reuses_existing_processed_take();
     test_timeline_plan_extends_overflowing_slots();
     test_imports_takes_by_srt_index();

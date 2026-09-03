@@ -15,7 +15,7 @@ void ReviewEffectDispatcher::apply(const ReviewEffect& effect) {
             player_.play(v.path);
 
         } else if constexpr (std::is_same_v<T, StopReviewPlay>) {
-            if (player_.is_playing()) player_.stop();
+            player_.stop();
 
         } else if constexpr (std::is_same_v<T, NavigateToRecord>) {
             navigate_to_record_ = v.idx;
