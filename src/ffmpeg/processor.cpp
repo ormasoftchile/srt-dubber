@@ -37,10 +37,10 @@ bool FfmpegProcessor::trim_silence(const std::filesystem::path& in,
     std::string cmd =
         "ffmpeg -y -i " + q(in) +
         " -af \"silenceremove="
-            "start_periods=1:start_duration=0.15:start_threshold=-40dB:start_silence=0.05,"
+            "start_periods=1:start_duration=0.15:start_threshold=-55dB:start_silence=0.20,"
             "areverse,"
             "silenceremove=start_periods=1:start_duration=0.15:"
-            "start_threshold=-40dB:start_silence=0.05,"
+            "start_threshold=-55dB:start_silence=0.25,"
             "areverse\" "
 #ifdef _WIN32
         + q(out) + " 2>NUL";
@@ -121,6 +121,21 @@ bool FfmpegProcessor::apply_atempo(const std::filesystem::path& in,
 // ---------------------------------------------------------------------------
 // Public entry-point
 // ---------------------------------------------------------------------------
+bool FfmpegProcessor::soften_edges(const std::filesystem::path& in,
+                  const std::filesystem::path& out)
+{
+    const std::string cmd =
+    "ffmpeg -y -i " + q(in) +
+        " -af \"aresample=48000,afade=t=in:d=0.005,areverse,afade=t=in:d=0.005,areverse\""
+    " -ar 48000 -c:a pcm_s16le " + q(out) +
+#ifdef _WIN32
+    " 2>NUL";
+#else
+    " 2>/dev/null";
+#endif
+    return run(cmd);
+}
+
 ProcessResult FfmpegProcessor::process_take(
     const std::filesystem::path& input_wav,
     const std::filesystem::path& output_wav,
@@ -133,6 +148,7 @@ ProcessResult FfmpegProcessor::process_take(
     auto stem  = output_wav.stem().string();
     auto tmp1  = base / (stem + "_trim.wav");
     auto tmp2  = base / (stem + "_norm.wav");
+    auto tmp3  = base / (stem + "_tempo.wav");
 
     // Step 1 – silence trim
     if (!trim_silence(input_wav, tmp1)) {
@@ -158,6 +174,7 @@ ProcessResult FfmpegProcessor::process_take(
 
     // Step 4 – atempo if needed
     constexpr double MAX_TEMPO = 1.08;
+    auto final_input = tmp2;
 
     if (slot_duration_ms > 0 && dur_ms > slot_duration_ms) {
         double rate = static_cast<double>(dur_ms) /
@@ -169,19 +186,27 @@ ProcessResult FfmpegProcessor::process_take(
             res.is_overflow  = true;
         }
 
-        if (!apply_atempo(tmp2, output_wav, rate)) {
+        if (!apply_atempo(tmp2, tmp3, rate)) {
             std::filesystem::remove(tmp2);
             res.error = "atempo failed";
             return res;
         }
         std::filesystem::remove(tmp2);
 
-        // Re-measure after stretch.
-        dur_ms          = get_duration_ms(output_wav);
+        final_input = tmp3;
         res.was_stretched = true;
-    } else {
-        // No stretch needed – just rename temp to output.
-        std::filesystem::rename(tmp2, output_wav);
+    }
+
+    const bool softened = soften_edges(final_input, output_wav);
+    std::filesystem::remove(final_input);
+    if (!softened) {
+        res.error = "edge fade failed";
+        return res;
+    }
+    dur_ms = get_duration_ms(output_wav);
+    if (dur_ms <= 0) {
+        res.error = "could not read final duration";
+        return res;
     }
 
     res.success     = true;

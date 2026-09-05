@@ -4,6 +4,8 @@
 #include "ffmpeg/take_pipeline.hpp"
 
 #include <cstdint>
+#include <cmath>
+#include <chrono>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -30,7 +32,13 @@ class FakeProcessor final : public ffmpeg::TakeProcessor {
 public:
     ffmpeg::ProcessResult next_result;
     int calls = 0;
+    int duration_calls = 0;
     int64_t last_slot_duration_ms = -1;
+
+    int64_t get_duration_ms(const std::filesystem::path&) override {
+        ++duration_calls;
+        return -1;
+    }
 
     ffmpeg::ProcessResult process_take(
         const std::filesystem::path&,
@@ -46,23 +54,9 @@ public:
     }
 };
 
-static void write_test_wav(const std::filesystem::path& path) {
+static void write_samples_wav(const std::filesystem::path& path,
+                              const std::vector<std::int16_t>& samples) {
     constexpr std::uint32_t sample_rate = 44100;
-    std::vector<std::int16_t> samples;
-    auto append_silence = [&](double seconds) {
-        samples.insert(samples.end(), static_cast<std::size_t>(sample_rate * seconds), 0);
-    };
-    auto append_signal = [&](double seconds) {
-        const auto count = static_cast<std::size_t>(sample_rate * seconds);
-        for (std::size_t i = 0; i < count; ++i)
-            samples.push_back((i / 50) % 2 == 0 ? 8000 : -8000);
-    };
-    append_silence(0.5);
-    append_signal(0.5);
-    append_silence(0.8);
-    append_signal(0.5);
-    append_silence(0.5);
-
     const std::uint32_t data_size = static_cast<std::uint32_t>(samples.size() * sizeof(std::int16_t));
     const std::uint32_t riff_size = 36 + data_size;
     const std::uint16_t format = 1;
@@ -88,7 +82,26 @@ static void write_test_wav(const std::filesystem::path& path) {
     out.write(reinterpret_cast<const char*>(samples.data()), data_size);
 }
 
-static std::int16_t max_sample_in_last_quarter(const std::filesystem::path& path) {
+static void write_test_wav(const std::filesystem::path& path) {
+    constexpr std::uint32_t sample_rate = 44100;
+    std::vector<std::int16_t> samples;
+    auto append_silence = [&](double seconds) {
+        samples.insert(samples.end(), static_cast<std::size_t>(sample_rate * seconds), 0);
+    };
+    auto append_signal = [&](double seconds) {
+        const auto count = static_cast<std::size_t>(sample_rate * seconds);
+        for (std::size_t i = 0; i < count; ++i)
+            samples.push_back((i / 50) % 2 == 0 ? 8000 : -8000);
+    };
+    append_silence(0.5);
+    append_signal(0.5);
+    append_silence(0.8);
+    append_signal(0.5);
+    append_silence(0.5);
+    write_samples_wav(path, samples);
+}
+
+static std::vector<std::int16_t> read_wav_samples(const std::filesystem::path& path) {
     std::ifstream in(path, std::ios::binary);
     in.seekg(12);
     while (in) {
@@ -100,16 +113,21 @@ static std::int16_t max_sample_in_last_quarter(const std::filesystem::path& path
         if (std::string(id, 4) == "data") {
             std::vector<std::int16_t> samples(size / sizeof(std::int16_t));
             in.read(reinterpret_cast<char*>(samples.data()), size);
-            std::int16_t maximum = 0;
-            for (std::size_t i = samples.size() * 3 / 4; i < samples.size(); ++i) {
-                const auto magnitude = static_cast<std::int16_t>(std::abs(samples[i]));
-                if (magnitude > maximum) maximum = magnitude;
-            }
-            return maximum;
+            return samples;
         }
         in.seekg(size + (size & 1), std::ios::cur);
     }
-    return 0;
+    return {};
+}
+
+static std::int16_t max_sample_in_last_quarter(const std::filesystem::path& path) {
+    const auto samples = read_wav_samples(path);
+    std::int16_t maximum = 0;
+    for (std::size_t index = samples.size() * 3 / 4; index < samples.size(); ++index) {
+        const auto magnitude = static_cast<std::int16_t>(std::abs(samples[index]));
+        if (magnitude > maximum) maximum = magnitude;
+    }
+    return maximum;
 }
 
 static void test_processes_raw_take_and_updates_entry() {
@@ -180,13 +198,101 @@ static void test_reuses_existing_processed_take() {
     std::vector<core::ProjectEntry> entries(1);
     entries[0].index = 2;
     entries[0].processed_take_path = processed.string();
+    entries[0].processed_duration_ms = 1800;
 
     FakeProcessor processor;
     const auto result = ffmpeg::prepare_takes(entries, root / "processed", processor);
 
     ASSERT_TRUE(result.success);
     ASSERT_EQ(processor.calls, 0);
+    ASSERT_EQ(processor.duration_calls, 0);
     ASSERT_EQ(result.clips.size(), std::size_t{1});
+    fs::remove_all(root);
+}
+
+static void test_reprocesses_cached_audio_after_a_retake() {
+    namespace fs = std::filesystem;
+    const auto root = fs::temp_directory_path() / "srt-dubber-retake-cache-test";
+    fs::remove_all(root);
+    fs::create_directories(root / "takes");
+    fs::create_directories(root / "processed");
+    const auto raw = root / "takes" / "1.wav";
+    const auto cached = root / "processed" / "1.wav";
+    std::ofstream(raw) << "new recording";
+    std::ofstream(cached) << "old processed audio";
+
+    for (const bool explicit_paths : {false, true}) {
+        fs::last_write_time(cached, fs::last_write_time(raw) - std::chrono::seconds(5));
+        std::vector<core::ProjectEntry> entries(1);
+        entries[0].index = 1;
+        entries[0].processed_duration_ms = 26000;
+        if (explicit_paths) {
+            entries[0].raw_take_path = raw.string();
+            entries[0].processed_take_path = cached.string();
+        }
+        FakeProcessor processor;
+        processor.next_result = {.success = true, .duration_ms = 10000};
+
+        const auto result = ffmpeg::prepare_takes(entries, root / "processed", processor);
+
+        ASSERT_TRUE(result.success);
+        ASSERT_EQ(processor.calls, 1);
+        ASSERT_EQ(entries[0].processed_duration_ms, int64_t{10000});
+        ASSERT_EQ(result.clips.size(), std::size_t{1});
+        if (!result.clips.empty())
+            ASSERT_EQ(result.clips[0].duration_ms, int64_t{10000});
+    }
+    fs::remove_all(root);
+}
+
+static void test_recovers_missing_duration_from_existing_processed_take() {
+    namespace fs = std::filesystem;
+    const auto root = fs::temp_directory_path() / "srt-dubber-cached-duration-test";
+    fs::remove_all(root);
+    fs::create_directories(root / "processed");
+    const auto processed = root / "processed" / "1.wav";
+    write_test_wav(processed);
+    const auto original_size = fs::file_size(processed);
+
+    for (const int64_t slot_duration : {2000, 4000}) {
+        std::vector<core::ProjectEntry> entries(1);
+        entries[0].index = 1;
+        entries[0].slot_duration_ms = slot_duration;
+
+        ffmpeg::FfmpegProcessor processor;
+        const auto result = ffmpeg::prepare_takes(entries, root / "processed", processor);
+
+        ASSERT_TRUE(result.success);
+        ASSERT_EQ(entries[0].processed_duration_ms, int64_t{2800});
+        ASSERT_EQ(entries[0].status, slot_duration < 2800
+            ? core::TakeStatus::overflow : core::TakeStatus::ok);
+        ASSERT_EQ(result.clips.size(), std::size_t{1});
+        if (!result.clips.empty())
+            ASSERT_EQ(result.clips[0].duration_ms, int64_t{2800});
+        ASSERT_EQ(fs::file_size(processed), original_size);
+    }
+    fs::remove_all(root);
+}
+
+static void test_rejects_unmeasurable_cached_take() {
+    namespace fs = std::filesystem;
+    const auto root = fs::temp_directory_path() / "srt-dubber-invalid-duration-test";
+    fs::remove_all(root);
+    fs::create_directories(root / "processed");
+    const auto processed = root / "processed" / "1.wav";
+    std::ofstream(processed) << "not audio";
+
+    std::vector<core::ProjectEntry> entries(1);
+    entries[0].index = 1;
+    entries[0].processed_take_path = processed.string();
+    entries[0].processed_duration_ms = 0;
+
+    ffmpeg::FfmpegProcessor processor;
+    const auto result = ffmpeg::prepare_takes(entries, root / "processed", processor);
+
+    ASSERT_TRUE(!result.success);
+    ASSERT_TRUE(result.error.find("take 1") != std::string::npos);
+    ASSERT_TRUE(result.clips.empty());
     fs::remove_all(root);
 }
 
@@ -288,6 +394,79 @@ static void test_processing_preserves_signal_after_internal_pause() {
     fs::remove_all(root);
 }
 
+static void test_processing_preserves_quiet_word_ending() {
+    namespace fs = std::filesystem;
+    const auto root = fs::temp_directory_path() / "srt-dubber-quiet-ending-test";
+    fs::remove_all(root);
+    fs::create_directories(root);
+    std::vector<std::int16_t> samples(22050, 0);
+    for (int index = 0; index < 35280; ++index)
+        samples.push_back(static_cast<std::int16_t>(4000 * std::sin(index * 0.0626893772)));
+    for (int index = 0; index < 15435; ++index)
+        samples.push_back(static_cast<std::int16_t>(100 * std::sin(index * 0.0940340658)));
+    samples.insert(samples.end(), 22050, 0);
+    write_samples_wav(root / "input.wav", samples);
+
+    ffmpeg::FfmpegProcessor processor;
+    const auto result = processor.process_take(root / "input.wav", root / "output.wav", 0);
+    ASSERT_TRUE(result.success);
+    ASSERT_TRUE(result.duration_ms >= 1150);
+    ASSERT_TRUE(max_sample_in_last_quarter(root / "output.wav") > 20);
+    fs::remove_all(root);
+}
+
+static void test_processing_keeps_margin_after_faint_final_sound() {
+    namespace fs = std::filesystem;
+    const auto root = fs::temp_directory_path() / "srt-dubber-faint-tail-margin-test";
+    fs::remove_all(root);
+    fs::create_directories(root);
+    std::vector<std::int16_t> samples(22050, 0);
+    for (int index = 0; index < 35280; ++index)
+        samples.push_back(static_cast<std::int16_t>(4000 * std::sin(index * 0.0626893772)));
+    for (int index = 0; index < 882; ++index)
+        samples.push_back(static_cast<std::int16_t>(30 * std::sin(index * 0.0940340658)));
+    samples.insert(samples.end(), 22050, 0);
+    write_samples_wav(root / "input.wav", samples);
+
+    ffmpeg::FfmpegProcessor processor;
+    const auto result = processor.process_take(root / "input.wav", root / "output.wav", 0);
+    ASSERT_TRUE(result.success);
+    const auto audio = read_wav_samples(root / "output.wav");
+    ASSERT_TRUE(!audio.empty());
+    std::size_t trailing_samples = 0;
+    for (auto sample = audio.rbegin(); sample != audio.rend() && std::abs(*sample) <= 5; ++sample)
+        ++trailing_samples;
+    ASSERT_TRUE(trailing_samples >= 48000 * 75 / 1000);
+    ASSERT_TRUE(trailing_samples < 48000 * 250 / 1000);
+    fs::remove_all(root);
+}
+
+static void test_processing_softens_edges_after_optional_tempo() {
+    namespace fs = std::filesystem;
+    const auto root = fs::temp_directory_path() / "srt-dubber-edge-fade-test";
+    fs::remove_all(root);
+    fs::create_directories(root);
+    std::vector<std::int16_t> samples;
+    for (int index = 0; index < 44100; ++index)
+        samples.push_back(static_cast<std::int16_t>(8000 * std::cos(index * 0.0626893772)));
+    write_samples_wav(root / "input.wav", samples);
+
+    for (const int64_t slot : {0, 700}) {
+        ffmpeg::FfmpegProcessor processor;
+        const auto output = root / (std::to_string(slot) + ".wav");
+        const auto result = processor.process_take(root / "input.wav", output, slot);
+        ASSERT_TRUE(result.success);
+        ASSERT_TRUE(result.duration_ms > 900);
+        const auto audio = read_wav_samples(output);
+        ASSERT_TRUE(!audio.empty());
+        if (!audio.empty()) {
+            ASSERT_TRUE(std::abs(audio.front()) <= 4);
+            ASSERT_TRUE(std::abs(audio.back()) <= 4);
+        }
+    }
+    fs::remove_all(root);
+}
+
 static void test_assembler_handles_empty_video_cleanly() {
     namespace fs = std::filesystem;
     const auto root = fs::temp_directory_path() / "srt-dubber-assembler-empty-video-test";
@@ -313,17 +492,54 @@ static void test_assembler_handles_empty_video_cleanly() {
     fs::remove_all(root);
 }
 
+static void test_assembler_handles_long_filter_command() {
+    namespace fs = std::filesystem;
+    const auto root = fs::temp_directory_path() / "srt-dubber-long-mix-test";
+    fs::remove_all(root);
+    const auto takes_dir = root / std::string(100, 'x');
+    fs::create_directories(takes_dir);
+    const auto take_path = takes_dir / "take.wav";
+    write_test_wav(take_path);
+
+    std::vector<ffmpeg::ProcessedClip> clips;
+    for (int index = 0; index < 74; ++index) {
+        clips.push_back({
+            .path = take_path,
+            .start_ms = index * 10,
+            .index = index + 1,
+            .duration_ms = 2800,
+            .slot_duration_ms = 2800,
+        });
+    }
+
+    ffmpeg::FfmpegAssembler assembler;
+    const auto result = assembler.assemble(
+        clips, 0, {}, root / "voiceover.wav", {}, {});
+    if (!result.success)
+        std::fprintf(stderr, "Long mix failed: %s\n", result.error.c_str());
+    ASSERT_TRUE(result.success);
+    ASSERT_TRUE(fs::exists(root / "voiceover.wav"));
+    fs::remove_all(root);
+}
+
 int main() {
     test_processes_raw_take_and_updates_entry();
     test_prepares_narration_without_fitting_provisional_slot();
     test_reuses_existing_processed_take();
+    test_reprocesses_cached_audio_after_a_retake();
+    test_recovers_missing_duration_from_existing_processed_take();
+    test_rejects_unmeasurable_cached_take();
     test_timeline_plan_extends_overflowing_slots();
     test_imports_takes_by_srt_index();
     test_mux_command_selects_voiceover_when_source_has_no_audio();
     test_mux_command_mixes_source_audio_with_narration();
     test_timeline_extension_holds_video_and_source_audio();
     test_processing_preserves_signal_after_internal_pause();
+    test_processing_preserves_quiet_word_ending();
+    test_processing_keeps_margin_after_faint_final_sound();
+    test_processing_softens_edges_after_optional_tempo();
     test_assembler_handles_empty_video_cleanly();
+    test_assembler_handles_long_filter_command();
 
     if (failures == 0) {
         std::printf("All take pipeline tests passed.\n");

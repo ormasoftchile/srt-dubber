@@ -183,7 +183,7 @@ Component make_assemble_component(
         } else if (rs.phase_label == "failed") {
             footer = vbox({
                 text(""),
-                color(Color::Red, hbox({text("  "), text("Assembly failed — see log above.")})),
+                color(Color::Red, paragraph("  " + rs.footer)),
                 text(""),
                 hbox({text("  "), dim(text("q  back")), filler()}),
                 text(""),
@@ -389,7 +389,7 @@ ScreenAction run_assemble_screen(core::Project& project,
         } else if (rs.phase_label == "failed") {
             footer = vbox({
                 text(""),
-                color(Color::Red, hbox({text("  "), text("Assembly failed — see log above.")})),
+                color(Color::Red, paragraph("  " + rs.footer)),
                 text(""),
                 hbox({text("  "), dim(text("q  back")), filler()}),
                 text(""),
