@@ -7,6 +7,10 @@
 #include <sstream>
 #include <string>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 #ifdef _MSC_VER
 #define popen  _popen
 #define pclose _pclose
@@ -20,7 +24,40 @@ namespace ffmpeg {
 
 static bool run_asm(const std::string& cmd)
 {
+#ifdef _WIN32
+    SECURITY_ATTRIBUTES attributes{sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
+    HANDLE null_stream = CreateFileW(
+        L"NUL", GENERIC_READ | GENERIC_WRITE,
+        FILE_SHARE_READ | FILE_SHARE_WRITE, &attributes,
+        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (null_stream == INVALID_HANDLE_VALUE)
+        return false;
+
+    STARTUPINFOA startup{};
+    startup.cb = sizeof(startup);
+    startup.dwFlags = STARTF_USESTDHANDLES;
+    startup.hStdInput = null_stream;
+    startup.hStdOutput = null_stream;
+    startup.hStdError = null_stream;
+    PROCESS_INFORMATION process{};
+    std::string command = cmd;
+    const bool started = CreateProcessA(
+        nullptr, command.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW,
+        nullptr, nullptr, &startup, &process) != FALSE;
+    CloseHandle(null_stream);
+    if (!started)
+        return false;
+
+    const DWORD wait_result = WaitForSingleObject(process.hProcess, INFINITE);
+    DWORD exit_code = 1;
+    const bool success = wait_result == WAIT_OBJECT_0 &&
+        GetExitCodeProcess(process.hProcess, &exit_code) && exit_code == 0;
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
+    return success;
+#else
     return std::system(cmd.c_str()) == 0;
+#endif
 }
 
 static std::string qa(const std::filesystem::path& p)
@@ -128,9 +165,7 @@ std::string build_timeline_extension_command(
     else
         cmd << " -an";
     cmd << " " << qa(output);
-#ifdef _WIN32
-    cmd << " 2>NUL";
-#else
+#ifndef _WIN32
     cmd << " 2>/dev/null";
 #endif
     return cmd.str();
@@ -160,9 +195,7 @@ std::string build_mux_command(
             << (video_duration_ms % 1000);
     }
     cmd << " " << qa(video_output);
-#ifdef _WIN32
-    cmd << " 2>NUL";
-#else
+#ifndef _WIN32
     cmd << " 2>/dev/null";
 #endif
     return cmd.str();
@@ -274,10 +307,9 @@ AssembleResult FfmpegAssembler::assemble(
         cmd << "[d" << i << "]";
     cmd << "amix=inputs=" << clips.size() << ":normalize=0\"";
 
-#ifdef _WIN32
-    cmd << " " << qa(voiceover_out) << " 2>NUL";
-#else
-    cmd << " " << qa(voiceover_out) << " 2>/dev/null";
+    cmd << " " << qa(voiceover_out);
+#ifndef _WIN32
+    cmd << " 2>/dev/null";
 #endif
 
     if (!run_asm(cmd.str())) {

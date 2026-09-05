@@ -31,6 +31,13 @@ PrepareTakesResult prepare_takes(
     std::filesystem::create_directories(output_dir);
 
     for (auto& entry : entries) {
+        if (entry.raw_take_path.empty() || !std::filesystem::exists(entry.raw_take_path)) {
+            const auto raw_candidate = output_dir.parent_path() / "takes" / (std::to_string(entry.index) + ".wav");
+            if (std::filesystem::exists(raw_candidate)) {
+                entry.raw_take_path = raw_candidate.string();
+            }
+        }
+
         if (entry.processed_take_path.empty() || !std::filesystem::exists(entry.processed_take_path)) {
             const auto proc_candidate = output_dir / (std::to_string(entry.index) + ".wav");
             if (std::filesystem::exists(proc_candidate)) {
@@ -39,7 +46,23 @@ PrepareTakesResult prepare_takes(
         }
 
         if (!entry.processed_take_path.empty() &&
-            std::filesystem::exists(entry.processed_take_path)) {
+            std::filesystem::exists(entry.processed_take_path) &&
+            (entry.raw_take_path.empty() || !std::filesystem::exists(entry.raw_take_path) ||
+             std::filesystem::last_write_time(entry.processed_take_path) >=
+                 std::filesystem::last_write_time(entry.raw_take_path))) {
+            if (entry.processed_duration_ms <= 0) {
+                const auto duration_ms = processor.get_duration_ms(entry.processed_take_path);
+                if (duration_ms <= 0) {
+                    result.error = "take " + std::to_string(entry.index) +
+                        ": could not read processed take duration";
+                    return result;
+                }
+                entry.processed_duration_ms = duration_ms;
+                entry.status = fit_to_slots && entry.slot_duration_ms > 0 &&
+                    duration_ms > entry.slot_duration_ms
+                    ? core::TakeStatus::overflow
+                    : core::TakeStatus::ok;
+            }
             result.clips.push_back({
                 entry.processed_take_path,
                 entry.start_ms,
@@ -48,13 +71,6 @@ PrepareTakesResult prepare_takes(
                 entry.slot_duration_ms,
             });
             continue;
-        }
-
-        if (entry.raw_take_path.empty() || !std::filesystem::exists(entry.raw_take_path)) {
-            const auto raw_candidate = output_dir.parent_path() / "takes" / (std::to_string(entry.index) + ".wav");
-            if (std::filesystem::exists(raw_candidate)) {
-                entry.raw_take_path = raw_candidate.string();
-            }
         }
 
         if (entry.raw_take_path.empty()) {

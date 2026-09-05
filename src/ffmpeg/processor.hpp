@@ -22,6 +22,8 @@ public:
         const std::filesystem::path& output_wav,
         int64_t slot_duration_ms
     ) = 0;
+
+    virtual int64_t get_duration_ms(const std::filesystem::path& wav) = 0;
 };
 
 class FfmpegProcessor final : public TakeProcessor {
@@ -34,6 +36,8 @@ public:
         int64_t slot_duration_ms
     ) override;
 
+    int64_t get_duration_ms(const std::filesystem::path& wav) override;
+
 private:
     // Step 1 – remove leading/trailing silence.
     bool trim_silence(const std::filesystem::path& in,
@@ -43,13 +47,13 @@ private:
     bool normalize(const std::filesystem::path& in,
                    const std::filesystem::path& out);
 
-    // Step 3 – query duration with ffprobe (returns -1 on error).
-    int64_t get_duration_ms(const std::filesystem::path& wav);
-
     // Step 4 – atempo stretch (rate already clamped by caller).
     bool apply_atempo(const std::filesystem::path& in,
                       const std::filesystem::path& out,
                       double rate);
+
+    bool soften_edges(const std::filesystem::path& in,
+                      const std::filesystem::path& out);
 };
 
 } // namespace ffmpeg
