@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+  xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  <Package Name="srt-dubber"
+           Manufacturer="Open Source Developer Cristian Gonzalo Ormazabal Ortega"
+           Version="$(var.ProductVersion)"
+           UpgradeCode="C6D97B86-0A37-4F2C-B078-C45B1A82F3D1"
+           Language="1033"
+           Codepage="65001"
+           Scope="perUser">
+    <SummaryInformation Description="SRT-guided voice-over recording and assembly" />
+
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+
+    <Media Id="1" Cabinet="srt-dubber.cab" EmbedCab="yes" />
+
+    <Property Id="ARPHELPLINK" Value="https://github.com/ormasoftchile/srt-dubber" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/ormasoftchile/srt-dubber" />
+
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.RepoRoot)\installer\License.rtf" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="LocalProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="srt-dubber">
+          <Component Id="MainExecutable"
+                     Guid="6538C01D-A078-48B0-9BDD-967E5C15D604"
+                     Bitness="always64">
+            <File Id="SrtDubberExe"
+                  Name="srt-dubber.exe"
+                  Source="$(var.BuildDir)\srt-dubber.exe"
+                  KeyPath="yes" />
+            <File Id="LicenseFile"
+                  Name="LICENSE.txt"
+                  Source="$(var.RepoRoot)\LICENSE" />
+            <Environment Id="AddInstallFolderToUserPath"
+                         Name="PATH"
+                         Value="[INSTALLFOLDER]"
+                         Action="set"
+                         Part="last"
+                         Separator=";" />
+          </Component>
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="MainFeature"
+             Title="srt-dubber"
+             Description="Installs srt-dubber and adds it to your user PATH."
+             Level="1"
+             ConfigurableDirectory="INSTALLFOLDER">
+      <ComponentRef Id="MainExecutable" />
+    </Feature>
+  </Package>
+</Wix>
