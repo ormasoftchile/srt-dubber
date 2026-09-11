@@ -12,7 +12,8 @@ class App {
 public:
     explicit App(core::Project& project,
                  std::filesystem::path video_path = {},
-                 int device_index = -1);
+                 int device_index = -1,
+                 int countdown_ms = 650);
     void run();
 
 private:
@@ -20,6 +21,5 @@ private:
     std::filesystem::path   video_path_;
     AudioRecorder           recorder_;
     AudioPlayer             player_;
-
-
+    int                     countdown_ms_{650};
 };

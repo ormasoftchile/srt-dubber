@@ -88,6 +88,9 @@ srt-dubber input.srt
 srt-dubber --list-devices
 srt-dubber --device 2 input.srt input.mp4
 
+# Customize countdown beat duration (default is 650ms per beat; 0 disables countdown)
+srt-dubber --countdown-ms 500 input.srt input.mp4
+
 # Preserve matching takes after updating subtitle text or timing
 srt-dubber --resync updated.srt
 

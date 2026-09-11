@@ -37,9 +37,9 @@ bool FfmpegProcessor::trim_silence(const std::filesystem::path& in,
     std::string cmd =
         "ffmpeg -y -i " + q(in) +
         " -af \"silenceremove="
-            "start_periods=1:start_duration=0.15:start_threshold=-55dB:start_silence=0.20,"
+            "start_periods=1:start_duration=0.03:start_threshold=-55dB:start_silence=0.20,"
             "areverse,"
-            "silenceremove=start_periods=1:start_duration=0.15:"
+            "silenceremove=start_periods=1:start_duration=0.02:"
             "start_threshold=-55dB:start_silence=0.25,"
             "areverse\" "
 #ifdef _WIN32

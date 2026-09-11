@@ -34,6 +34,7 @@ static void print_help() {
         "\n"
         "OPTIONS:\n"
         "  --device N        Select audio input device by index (see --list-devices)\n"
+        "  --countdown-ms N  Duration of each countdown beat in ms (default: 650, 0 to disable)\n"
         "  --resync <new.srt> Re-sync an existing project to a new SRT file\n"
         "  --prepare          Process and measure recorded takes without fitting SRT slots\n"
         "  --assemble         Assemble an existing project with a recorded video\n"
@@ -44,6 +45,7 @@ static void print_help() {
         "\n"
         "EXAMPLES:\n"
         "  srt-dubber subtitles.srt\n"
+        "  srt-dubber --countdown-ms 300 subtitles.srt\n"
         "  srt-dubber subtitles.srt reference.mp4\n"
         "  srt-dubber --device 2 subtitles.srt\n"
         "  srt-dubber --resync updated.srt\n"
@@ -197,25 +199,54 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    // Parse optional --device N before the positional args.
+    // Parse optional flags (--device N, --countdown-ms N) before positional args.
     int device_index = -1;
-    int first_pos = 1;   // index of first positional arg after flags
+    int countdown_ms = 650; // default countdown (650ms per beat, ~2.0s total)
 
-    if (argc >= 3 && std::string(argv[1]) == "--device") {
+    if (const char* env_cd = std::getenv("SRT_COUNTDOWN_MS")) {
         try {
-            device_index = std::stoi(argv[2]);
-        } catch (...) {
-            std::cerr << "Error: --device requires an integer argument.\n";
-            return 1;
-        }
-        first_pos = 3;
+            countdown_ms = std::max(0, std::stoi(env_cd));
+        } catch (...) {}
     }
+
+    int arg_i = 1;
+    while (arg_i < argc) {
+        const std::string arg = argv[arg_i];
+        if (arg == "--device") {
+            if (arg_i + 1 >= argc) {
+                std::cerr << "Error: --device requires an integer argument.\n";
+                return 1;
+            }
+            try {
+                device_index = std::stoi(argv[arg_i + 1]);
+            } catch (...) {
+                std::cerr << "Error: --device requires an integer argument.\n";
+                return 1;
+            }
+            arg_i += 2;
+        } else if (arg == "--countdown-ms") {
+            if (arg_i + 1 >= argc) {
+                std::cerr << "Error: --countdown-ms requires an integer argument (ms per count).\n";
+                return 1;
+            }
+            try {
+                countdown_ms = std::max(0, std::stoi(argv[arg_i + 1]));
+            } catch (...) {
+                std::cerr << "Error: --countdown-ms requires an integer argument (ms per count).\n";
+                return 1;
+            }
+            arg_i += 2;
+        } else {
+            break;
+        }
+    }
+    int first_pos = arg_i;
 
     // Check for --resync flag
     if (first_pos < argc && std::string(argv[first_pos]) == "--resync") {
         if (first_pos + 1 >= argc) {
             std::cerr << "Error: --resync requires a new SRT file path.\n";
-            std::cerr << "Usage: srt-dubber [--device N] --resync new.srt\n";
+            std::cerr << "Usage: srt-dubber [OPTIONS] --resync new.srt\n";
             return 1;
         }
 
@@ -260,8 +291,8 @@ int main(int argc, char* argv[]) {
     }
 
     if (first_pos >= argc) {
-        std::cerr << "Usage: srt-dubber [--device N] <input.srt> [video.mp4]\n";
-        std::cerr << "       srt-dubber [--device N] --resync new.srt\n";
+        std::cerr << "Usage: srt-dubber [OPTIONS] <input.srt> [video.mp4]\n";
+        std::cerr << "       srt-dubber [OPTIONS] --resync new.srt\n";
         std::cerr << "       srt-dubber --list-devices\n";
         std::cerr << "       srt-dubber --version\n";
         return 1;
@@ -280,7 +311,7 @@ int main(int argc, char* argv[]) {
 
     fprintf(stderr, "[audio] Use --list-devices to see available inputs. Use --device N to select one.\n");
 
-    App app(project, video_path, device_index);
+    App app(project, video_path, device_index, countdown_ms);
     app.run();
 
     return 0;

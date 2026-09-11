@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <stdexcept>
+#include <thread>
 
 // Per-recording diagnostic logging is silent by default because the TUI owns
 // the terminal during recording — any stderr write lands directly on the
@@ -209,6 +210,17 @@ bool AudioRecorder::start(const std::filesystem::path& output_wav)
 // ---------------------------------------------------------------------------
 bool AudioRecorder::stop()
 {
+    if (!m_recording.load(std::memory_order_relaxed))
+        return false;
+
+    // Give the audio hardware and OS driver a brief grace period (~300ms) to
+    // flush buffered, in-flight speech into data_callback. Without this post-roll,
+    // the final syllables spoken immediately before pressing 's' or 'n' are still
+    // buffered in the OS / USB / Bluetooth driver and get abruptly truncated.
+    if (m_capture_active.load(std::memory_order_acquire)) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    }
+
     if (!m_recording.exchange(false))
         return false;
 
