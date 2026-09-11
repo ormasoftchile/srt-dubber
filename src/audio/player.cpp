@@ -18,6 +18,12 @@ struct PlayerContext {
     // stabilises. ~200ms at 44100 Hz.
     static constexpr unsigned int kWarmupFrames = 44100 * 200 / 1000; // 8820
     std::atomic<unsigned int> warmup_remaining {kWarmupFrames};
+    // Silence post-roll: output silence for this many frames after decoder EOF
+    // so hardware playback buffers (e.g. Bluetooth / OS mixer) finish draining
+    // before playback is stopped. ~250ms at 44100 Hz.
+    static constexpr unsigned int kPostrollFrames = 44100 * 250 / 1000; // 11025
+    std::atomic<unsigned int> postroll_remaining {kPostrollFrames};
+    std::atomic<bool>         eof_reached {false};
 };
 
 // ---------------------------------------------------------------------------
@@ -48,6 +54,18 @@ void AudioPlayer::data_callback(ma_device*   device,
         pOutput = static_cast<uint8_t*>(pOutput) + silence_frames * bpf;
     }
 
+    if (ctx->eof_reached.load(std::memory_order_relaxed)) {
+        // EOF reached on earlier callback: drain output buffer with silence.
+        std::memset(pOutput, 0, frameCount * bpf);
+        unsigned int post = ctx->postroll_remaining.load(std::memory_order_relaxed);
+        unsigned int silence_frames = (frameCount < post) ? frameCount : post;
+        ctx->postroll_remaining.fetch_sub(silence_frames, std::memory_order_relaxed);
+        if (ctx->postroll_remaining.load(std::memory_order_relaxed) == 0) {
+            ctx->player->m_playing.store(false, std::memory_order_release);
+        }
+        return;
+    }
+
     ma_uint64 frames_read = 0;
     ma_result result = ma_decoder_read_pcm_frames(
         &ctx->decoder, pOutput, frameCount, &frames_read);
@@ -62,8 +80,8 @@ void AudioPlayer::data_callback(ma_device*   device,
     }
 
     if (result != MA_SUCCESS || frames_read < frameCount) {
-        // End of file — signal the player to stop.
-        ctx->player->m_playing.store(false, std::memory_order_release);
+        // End of file reached — start draining hardware playback buffer.
+        ctx->eof_reached.store(true, std::memory_order_release);
     }
 }
 

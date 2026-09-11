@@ -16,7 +16,8 @@ namespace tui {
 ScreenAction run_recording_screen(core::Project& project,
                                   AudioRecorder&  recorder,
                                   AudioPlayer&    player,
-                                  int             start_index = 0);
+                                  int             start_index = 0,
+                                  int             countdown_step_ms = 650);
 
 /// Component factory for the recording screen.
 ftxui::Component make_recording_component(
@@ -25,6 +26,7 @@ ftxui::Component make_recording_component(
     AudioPlayer& player,
     int start_index,
     ftxui::ScreenInteractive& screen,
-    NavigateFunc navigate);
+    NavigateFunc navigate,
+    int countdown_step_ms = 650);
 
 } // namespace tui

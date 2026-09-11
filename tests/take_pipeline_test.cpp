@@ -441,6 +441,34 @@ static void test_processing_keeps_margin_after_faint_final_sound() {
     fs::remove_all(root);
 }
 
+static void test_processing_preserves_short_trailing_word() {
+    namespace fs = std::filesystem;
+    const auto root = fs::temp_directory_path() / "srt-dubber-short-tail-word-test";
+    fs::remove_all(root);
+    fs::create_directories(root);
+    // 1.0s tone, 0.20s natural pause, 0.06s short final word (60ms), 0.5s trailing silence
+    std::vector<std::int16_t> samples;
+    for (int index = 0; index < 44100; ++index)
+        samples.push_back(static_cast<std::int16_t>(4000 * std::sin(index * 0.0626893772)));
+    for (int index = 0; index < 8820; ++index)
+        samples.push_back(0);
+    for (int index = 0; index < 2646; ++index)
+        samples.push_back(static_cast<std::int16_t>(2000 * std::sin(index * 0.0940340658)));
+    for (int index = 0; index < 22050; ++index)
+        samples.push_back(0);
+    write_samples_wav(root / "input.wav", samples);
+
+    ffmpeg::FfmpegProcessor processor;
+    const auto result = processor.process_take(root / "input.wav", root / "output.wav", 0);
+    ASSERT_TRUE(result.success);
+    // Input speech ends at 1.0s + 0.20s + 0.06s = 1.26s.
+    // Plus ~0.20-0.25s preserved silence margins -> final duration should be >= 1.45s.
+    ASSERT_TRUE(result.duration_ms >= 1400);
+    // Ensure the final short word is present in the tail audio
+    ASSERT_TRUE(max_sample_in_last_quarter(root / "output.wav") > 100);
+    fs::remove_all(root);
+}
+
 static void test_processing_softens_edges_after_optional_tempo() {
     namespace fs = std::filesystem;
     const auto root = fs::temp_directory_path() / "srt-dubber-edge-fade-test";
@@ -537,6 +565,7 @@ int main() {
     test_processing_preserves_signal_after_internal_pause();
     test_processing_preserves_quiet_word_ending();
     test_processing_keeps_margin_after_faint_final_sound();
+    test_processing_preserves_short_trailing_word();
     test_processing_softens_edges_after_optional_tempo();
     test_assembler_handles_empty_video_cleanly();
     test_assembler_handles_long_filter_command();

@@ -59,11 +59,14 @@ struct RecordingState {
     std::jthread countdown_thread;
     std::jthread refresh_thread;   // must outlive the component
     core::RecordingEffectDispatcher dispatcher;
+    int countdown_step_ms{650};
     
     RecordingState(int start_idx, int total, bool has_take,
-                   AudioRecorder& rec, AudioPlayer& pl, core::Project& proj)
+                   AudioRecorder& rec, AudioPlayer& pl, core::Project& proj,
+                   int step_ms = 650)
         : flow{start_idx, total, core::FlowPhase::Idle, has_take}
         , dispatcher{rec, pl, proj}
+        , countdown_step_ms{step_ms}
     {}
     
     // non-copyable, non-movable (jthread, atomic)
@@ -79,7 +82,8 @@ Component make_recording_component(
     AudioPlayer& player,
     int start_index,
     ScreenInteractive& screen,
-    NavigateFunc navigate)
+    NavigateFunc navigate,
+    int countdown_step_ms)
 {
     auto& entries = project.entries();
     if (entries.empty()) {
@@ -93,7 +97,8 @@ Component make_recording_component(
         start_idx,
         static_cast<int>(entries.size()),
         !entries[start_idx].raw_take_path.empty(),
-        recorder, player, project
+        recorder, player, project,
+        countdown_step_ms
     );
 
     // Helper to sync flow state from project (call after mutations)
@@ -133,20 +138,32 @@ Component make_recording_component(
             std::visit([&](const auto& v) {
                 using T = std::decay_t<decltype(v)>;
                 if constexpr (std::is_same_v<T, core::StartCountdown>) {
-                    state->countdown_state.store(CountdownState::Three);
-                    state->countdown_thread = std::jthread([state, &screen, &recorder](std::stop_token stop) {
+                    const int step_ms = state->countdown_step_ms;
+                    if (step_ms > 0) {
+                        state->countdown_state.store(CountdownState::Three);
+                    }
+                    state->countdown_thread = std::jthread([state, &screen, &recorder, step_ms](std::stop_token stop) {
                         using namespace std::chrono_literals;
                         // Sleep in short increments so stop is checked frequently.
                         auto sleep_or_abort = [&](int ms) -> bool {
-                            for (int i = 0; i < ms / 16 + 1 && !stop.stop_requested(); ++i)
-                                std::this_thread::sleep_for(std::chrono::milliseconds(16));
+                            if (ms <= 0) return stop.stop_requested();
+                            int remaining = ms;
+                            while (remaining > 0 && !stop.stop_requested()) {
+                                int slice = std::min(remaining, 16);
+                                std::this_thread::sleep_for(std::chrono::milliseconds(slice));
+                                remaining -= slice;
+                            }
                             return stop.stop_requested();
                         };
-                        if (sleep_or_abort(1000)) { state->countdown_state.store(CountdownState::None); return; }
-                        state->countdown_state.store(CountdownState::Two);
-                        if (sleep_or_abort(1000)) { state->countdown_state.store(CountdownState::None); return; }
-                        state->countdown_state.store(CountdownState::One);
-                        if (sleep_or_abort(1000)) { state->countdown_state.store(CountdownState::None); return; }
+                        if (step_ms > 0) {
+                            if (sleep_or_abort(step_ms)) { state->countdown_state.store(CountdownState::None); return; }
+                            state->countdown_state.store(CountdownState::Two);
+                            screen.Post(Event::Custom);
+                            if (sleep_or_abort(step_ms)) { state->countdown_state.store(CountdownState::None); return; }
+                            state->countdown_state.store(CountdownState::One);
+                            screen.Post(Event::Custom);
+                            if (sleep_or_abort(step_ms)) { state->countdown_state.store(CountdownState::None); return; }
+                        }
 
                         // Hold on "1" until the recorder has finished warming up.
                         // Device init runs in parallel with the countdown (kicked off
@@ -177,7 +194,8 @@ Component make_recording_component(
 
                         state->countdown_state.store(CountdownState::Go);
                         screen.Post(Event::Special("\x01"));
-                        if (sleep_or_abort(500)) {
+                        const int go_display_ms = step_ms > 0 ? std::min(step_ms, 300) : 150;
+                        if (sleep_or_abort(go_display_ms)) {
                             state->countdown_state.store(CountdownState::None);
                             return;
                         }
@@ -348,7 +366,8 @@ Component make_recording_component(
 ScreenAction run_recording_screen(core::Project& project,
                                   AudioRecorder&  recorder,
                                   AudioPlayer&    player,
-                                  int             start_index) {
+                                  int             start_index,
+                                  int             countdown_step_ms) {
     auto& entries = project.entries();
     if (entries.empty()) return ScreenAction::GoSession;
 
@@ -405,21 +424,59 @@ ScreenAction run_recording_screen(core::Project& project,
                 using T = std::decay_t<decltype(v)>;
                 if constexpr (std::is_same_v<T, core::StartCountdown>) {
                     // Dispatcher opened the recorder. TUI owns the countdown thread.
-                    countdown_state.store(CountdownState::Three);
-                    countdown_thread = std::jthread([&](std::stop_token stop) {
+                    if (countdown_step_ms > 0) {
+                        countdown_state.store(CountdownState::Three);
+                    }
+                    countdown_thread = std::jthread([&, countdown_step_ms](std::stop_token stop) {
                         using namespace std::chrono_literals;
-                        auto sleep_or_abort = [&](auto dur) -> bool {
-                            std::this_thread::sleep_for(dur);
+                        auto sleep_or_abort = [&](int ms) -> bool {
+                            if (ms <= 0) return stop.stop_requested();
+                            int remaining = ms;
+                            while (remaining > 0 && !stop.stop_requested()) {
+                                int slice = std::min(remaining, 16);
+                                std::this_thread::sleep_for(std::chrono::milliseconds(slice));
+                                remaining -= slice;
+                            }
                             return stop.stop_requested();
                         };
-                        if (sleep_or_abort(1s)) { countdown_state.store(CountdownState::None); return; }
-                        countdown_state.store(CountdownState::Two);
-                        if (sleep_or_abort(1s)) { countdown_state.store(CountdownState::None); return; }
-                        countdown_state.store(CountdownState::One);
-                        if (sleep_or_abort(1s)) { countdown_state.store(CountdownState::None); return; }
-                        screen.Post(Event::Special("\x01"));
+                        if (countdown_step_ms > 0) {
+                            if (sleep_or_abort(countdown_step_ms)) { countdown_state.store(CountdownState::None); return; }
+                            countdown_state.store(CountdownState::Two);
+                            screen.Post(Event::Custom);
+                            if (sleep_or_abort(countdown_step_ms)) { countdown_state.store(CountdownState::None); return; }
+                            countdown_state.store(CountdownState::One);
+                            screen.Post(Event::Custom);
+                            if (sleep_or_abort(countdown_step_ms)) { countdown_state.store(CountdownState::None); return; }
+                        }
+
+                        constexpr int kMaxWarmupWaitMs = 5000;
+                        int waited = 0;
+                        while ((dispatcher.recorder_start_pending()
+                                || recorder.is_warming_up())
+                               && waited < kMaxWarmupWaitMs) {
+                            if (stop.stop_requested()) { countdown_state.store(CountdownState::None); return; }
+                            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+                            waited += 16;
+                            screen.Post(Event::Custom);
+                        }
+
+                        if (dispatcher.recorder_start_pending()
+                            || !recorder.is_recording()
+                            || recorder.is_warming_up()) {
+                            countdown_state.store(CountdownState::None);
+                            screen.Post(Event::Special("\x02"));
+                            return;
+                        }
+
                         countdown_state.store(CountdownState::Go);
+                        screen.Post(Event::Special("\x01"));
+                        const int go_display_ms = countdown_step_ms > 0 ? std::min(countdown_step_ms, 300) : 150;
+                        if (sleep_or_abort(go_display_ms)) {
+                            countdown_state.store(CountdownState::None);
+                            return;
+                        }
                         countdown_state.store(CountdownState::None);
+                        screen.Post(Event::Custom);
                     });
                 } else if constexpr (std::is_same_v<T, core::CancelCountdown>) {
                     cancel_countdown();
@@ -529,6 +586,12 @@ ScreenAction run_recording_screen(core::Project& project,
         // Handle special CountdownComplete event
         if (event == Event::Special("\x01")) {
             auto t = core::recording_step(flow, core::RecordingCmd::CountdownComplete);
+            apply_effects(t.effects);
+            flow = t.next;
+            return true;
+        }
+        if (event == Event::Special("\x02")) {
+            auto t = core::recording_step(flow, core::RecordingCmd::CountdownFailed);
             apply_effects(t.effects);
             flow = t.next;
             return true;

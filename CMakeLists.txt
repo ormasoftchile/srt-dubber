@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(srt-dubber VERSION 0.1.0 LANGUAGES CXX)
+project(srt-dubber VERSION 0.1.4 LANGUAGES CXX)
 
 # Install git hooks so secret scanning runs before every commit.
 # Safe to run repeatedly; skipped in CI (no .git dir).

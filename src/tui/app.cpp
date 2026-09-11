@@ -56,14 +56,16 @@ static Component build_component(
     core::Project& project,
     AudioRecorder& recorder,
     AudioPlayer& player,
-    const std::filesystem::path& video_path)
+    const std::filesystem::path& video_path,
+    int countdown_ms)
 {
     switch (nav.screen) {
         case core::AppScreen::Session:
             return tui::make_session_component(project, navigate);
         case core::AppScreen::Recording:
             return tui::make_recording_component(project, recorder, player,
-                                                 nav.recording_idx, screen, navigate);
+                                                 nav.recording_idx, screen, navigate,
+                                                 countdown_ms);
         case core::AppScreen::Review:
             return tui::make_review_component(project, player, nav.review_idx, navigate);
         case core::AppScreen::Assemble:
@@ -74,8 +76,8 @@ static Component build_component(
 
 // ── App implementation ────────────────────────────────────────────────────────
 
-::App::App(core::Project& project, std::filesystem::path video_path, int device_index)
-    : project_(project), video_path_(std::move(video_path)), recorder_(device_index) {}
+::App::App(core::Project& project, std::filesystem::path video_path, int device_index, int countdown_ms)
+    : project_(project), video_path_(std::move(video_path)), recorder_(device_index), countdown_ms_(countdown_ms) {}
 
 void ::App::run() {
     // Optionally tee stdout to a file for escape-sequence debugging.
@@ -129,7 +131,7 @@ void ::App::run() {
         }
         
         // Build the new screen's component
-        active = build_component(nav, screen, navigate, project_, recorder_, player_, video_path_);
+        active = build_component(nav, screen, navigate, project_, recorder_, player_, video_path_, countdown_ms_);
 
         // Trigger a re-render — FTXUI owns stdout; never write raw escape
         // sequences outside its control as that corrupts its cursor-position
@@ -143,7 +145,7 @@ void ::App::run() {
     };
     
     // Build initial component (session screen)
-    active = build_component(nav, screen, navigate, project_, recorder_, player_, video_path_);
+    active = build_component(nav, screen, navigate, project_, recorder_, player_, video_path_, countdown_ms_);
     
     // Router: delegates to whatever `active` currently is
     auto router = Renderer([&]() -> Element {
