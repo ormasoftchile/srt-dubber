@@ -57,9 +57,15 @@ struct RecordingState {
         , countdown_step_ms{step_ms}
     {}
     
+#if defined(__cpp_deleted_function) && __cpp_deleted_function >= 202403L
+#define SRT_DELETE_REASON(msg) = delete(msg)
+#else
+#define SRT_DELETE_REASON(msg) = delete
+#endif
+
     // non-copyable, non-movable (jthread, atomic) - C++26 delete with reason
-    RecordingState(const RecordingState&) = delete("RecordingState owns active threads and atomics and cannot be copied");
-    RecordingState& operator=(const RecordingState&) = delete("RecordingState owns active threads and atomics and cannot be copied");
+    RecordingState(const RecordingState&) SRT_DELETE_REASON("RecordingState owns active threads and atomics and cannot be copied");
+    RecordingState& operator=(const RecordingState&) SRT_DELETE_REASON("RecordingState owns active threads and atomics and cannot be copied");
 };
 
 // ── Component factory ────────────────────────────────────────────────────────
