@@ -7,7 +7,7 @@ Record your own voice-over for SRT-subtitled videos. One take per subtitle slot,
 | Dependency | Notes |
 |---|---|
 | CMake ≥ 3.20 | Build system |
-| C++20 compiler | clang++ 14+, g++ 12+, or Visual Studio 2022 |
+| C++26 compiler | clang++ 17+, g++ 14+, or Visual Studio 2022 17.10+ |
 | Git and `patch` | CMake downloads and patches FTXUI during configuration |
 | ffmpeg + ffprobe | Runtime dependency; both must be on `PATH` |
 | miniaudio.h | Place in `vendor/` (see [vendor/README.md](vendor/README.md)) |

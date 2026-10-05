@@ -2,7 +2,8 @@
 
 #include <algorithm>
 #include <cctype>
-#include <string>
+#include <ranges>
+#include <string_view>
 #include <unordered_map>
 
 namespace core {
@@ -10,7 +11,7 @@ namespace core {
 namespace {
 
 /// Normalize whitespace: trim leading/trailing, collapse interior runs to single space, lowercase.
-std::string normalize_text(const std::string& text) {
+std::string normalize_text(std::string_view text) {
     std::string result;
     result.reserve(text.size());
     
@@ -23,7 +24,7 @@ std::string normalize_text(const std::string& text) {
                 in_whitespace = true;
             }
         } else {
-            result += std::tolower(c);
+            result += static_cast<char>(std::tolower(c));
             in_whitespace = false;
         }
     }
@@ -49,7 +50,7 @@ ResyncResult resync(core::Project& project, const std::vector<srt::SrtEntry>& ne
     for (auto& old_entry : project.entries()) {
         std::string norm = normalize_text(old_entry.text);
         // For multiple entries with same text, first one wins
-        if (text_map.find(norm) == text_map.end()) {
+        if (!text_map.contains(norm)) {
             text_map[norm] = &old_entry;
         }
     }

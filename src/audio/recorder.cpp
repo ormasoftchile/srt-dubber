@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <print>
 #include <stdexcept>
 #include <thread>
 
@@ -299,7 +300,7 @@ void AudioRecorder::list_devices()
 {
     ma_context context;
     if (ma_context_init(nullptr, 0, nullptr, &context) != MA_SUCCESS) {
-        fprintf(stderr, "[audio] Failed to initialise audio context.\n");
+        std::println(stderr, "[audio] Failed to initialise audio context.");
         return;
     }
 
@@ -312,14 +313,14 @@ void AudioRecorder::list_devices()
                                &playback_devices, &playback_count,
                                &capture_devices,  &capture_count) != MA_SUCCESS)
     {
-        fprintf(stderr, "[audio] Failed to enumerate devices.\n");
+        std::println(stderr, "[audio] Failed to enumerate devices.");
         ma_context_uninit(&context);
         return;
     }
 
-    fprintf(stderr, "[audio] Capture devices (%u):\n", capture_count);
+    std::println(stderr, "[audio] Capture devices ({}):", capture_count);
     for (ma_uint32 i = 0; i < capture_count; ++i) {
-        fprintf(stderr, "  [%u] %s%s\n",
+        std::println(stderr, "  [{}] {}{}",
                 i,
                 capture_devices[i].name,
                 capture_devices[i].isDefault ? "  (default)" : "");

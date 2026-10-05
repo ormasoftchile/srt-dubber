@@ -1,5 +1,7 @@
 #pragma once
 #include "ftxui/dom/elements.hpp"
+#include <format>
+#include <string_view>
 
 #ifndef SRT_DUBBER_VERSION
 #define SRT_DUBBER_VERSION "0.0.0-dev"
@@ -11,13 +13,11 @@ using namespace ftxui;
 
 /// Permanent app identity header shown in all screens.
 /// context: right-aligned annotation, e.g. "Caption 3/42", "Review"; empty = none
-inline Element app_header(const std::string& context = "") {
-    Element right;
-    if (context.empty()) {
-        right = dim(text(std::string("v") + SRT_DUBBER_VERSION + "  "));
-    } else {
-        right = dim(text(context + "  \xc2\xb7  v" + SRT_DUBBER_VERSION + "  "));
-    }
+inline Element app_header(std::string_view context = "") {
+    Element right = context.empty()
+        ? dim(text(std::format("v{}  ", SRT_DUBBER_VERSION)))
+        : dim(text(std::format("{}  \xc2\xb7  v{}  ", context, SRT_DUBBER_VERSION)));
+
     return hbox({
         text("  "),
         bold(text("\xe2\x97\x89  srt-dubber")),
@@ -36,7 +36,7 @@ inline Element app_header_recording(bool warming_up = false) {
         text("  "),
         status,
         filler(),
-        dim(text(std::string("v") + SRT_DUBBER_VERSION + "  ")),
+        dim(text(std::format("v{}  ", SRT_DUBBER_VERSION))),
     });
 }
 

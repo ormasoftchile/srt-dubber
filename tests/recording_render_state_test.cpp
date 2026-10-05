@@ -3,11 +3,11 @@
 #include "core/recording_flow.hpp"
 #include "core/recording_render_state.hpp"
 #include <cassert>
-#include <iostream>
+#include <print>
 
 static int passed = 0, failed = 0;
 #define ASSERT_EQ(a, b) do { if ((a) == (b)) { ++passed; } else { \
-    std::cerr << "FAIL " << __FILE__ << ":" << __LINE__ << " — " << #a << " != " << #b << "\n"; ++failed; } } while(0)
+    std::println(stderr, "FAIL {}:{} — {} != {}", __FILE__, __LINE__, #a, #b); ++failed; } } while(0)
 #define ASSERT_TRUE(x) ASSERT_EQ((x), true)
 #define ASSERT_FALSE(x) ASSERT_EQ((x), false)
 
@@ -44,6 +44,6 @@ int main() {
         ASSERT_EQ(rs.elapsed_ms, int64_t(1500));
     }
 
-    std::cout << "\n" << passed << " passed, " << failed << " failed\n";
+    std::println("\n{} passed, {} failed", passed, failed);
     return failed > 0 ? 1 : 0;
 }

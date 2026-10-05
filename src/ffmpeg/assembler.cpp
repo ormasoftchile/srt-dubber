@@ -3,9 +3,9 @@
 #include <array>
 #include <cstdio>
 #include <cstdlib>
-#include <iomanip>
-#include <sstream>
+#include <format>
 #include <string>
+#include <string_view>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -17,6 +17,12 @@
 #endif
 
 namespace ffmpeg {
+
+#ifdef _WIN32
+constexpr std::string_view kDevNull = "2>NUL";
+#else
+constexpr std::string_view kDevNull = "2>/dev/null";
+#endif
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -67,11 +73,7 @@ static std::string qa(const std::filesystem::path& p)
 
 static std::string seconds(int64_t milliseconds)
 {
-    std::ostringstream value;
-    value << (milliseconds / 1000) << "."
-          << std::setfill('0') << std::setw(3)
-          << (milliseconds % 1000);
-    return value.str();
+    return std::format("{}.{:03d}", milliseconds / 1000, milliseconds % 1000);
 }
 
 TimelinePlan build_timeline_plan(const std::vector<ProcessedClip>& clips)
@@ -150,25 +152,21 @@ std::string build_timeline_extension_command(
                           ":v=0:a=1[aout]");
     }
 
-    std::ostringstream cmd;
-    cmd << "ffmpeg -y -i " << qa(input) << " -filter_complex \"";
+    std::string cmd = std::format("ffmpeg -y -i {} -filter_complex \"", qa(input));
     for (std::size_t i = 0; i < filters.size(); ++i) {
-        if (i > 0) cmd << ";";
-        cmd << filters[i];
+        if (i > 0) cmd += ";";
+        cmd += filters[i];
     }
-    cmd << "\" -map \"[vout]\"";
+    cmd += "\" -map \"[vout]\"";
     if (source_has_audio)
-        cmd << " -map \"[aout]\"";
-    cmd << " -map_metadata 0 -c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p";
+        cmd += " -map \"[aout]\"";
+    cmd += " -map_metadata 0 -c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p";
     if (source_has_audio)
-        cmd << " -c:a aac";
+        cmd += " -c:a aac";
     else
-        cmd << " -an";
-    cmd << " " << qa(output);
-#ifndef _WIN32
-    cmd << " 2>/dev/null";
-#endif
-    return cmd.str();
+        cmd += " -an";
+    cmd += std::format(" {} {}", qa(output), kDevNull);
+    return cmd;
 }
 
 std::string build_mux_command(
@@ -178,38 +176,29 @@ std::string build_mux_command(
     int64_t video_duration_ms,
     bool source_has_audio)
 {
-    std::ostringstream cmd;
-    cmd << "ffmpeg -y -i " << qa(video_input)
-        << " -i " << qa(voiceover_input);
+    std::string cmd;
     if (source_has_audio) {
-        cmd << " -filter_complex \"[0:a:0][1:a:0]"
-            << "amix=inputs=2:normalize=0,alimiter=limit=0.95[mixed]\""
-            << " -map 0:v:0 -map \"[mixed]\"";
+        cmd = std::format(
+            "ffmpeg -y -i {} -i {} -filter_complex \"[0:a:0][1:a:0]amix=inputs=2:normalize=0,alimiter=limit=0.95[mixed]\" -map 0:v:0 -map \"[mixed]\"",
+            qa(video_input), qa(voiceover_input));
     } else {
-        cmd << " -map 0:v:0 -map 1:a:0";
+        cmd = std::format(
+            "ffmpeg -y -i {} -i {} -map 0:v:0 -map 1:a:0",
+            qa(video_input), qa(voiceover_input));
     }
-    cmd << " -map_metadata 0 -c:v copy -c:a aac";
+    cmd += " -map_metadata 0 -c:v copy -c:a aac";
     if (video_duration_ms > 0) {
-        cmd << " -t " << (video_duration_ms / 1000)
-            << "." << std::setfill('0') << std::setw(3)
-            << (video_duration_ms % 1000);
+        cmd += std::format(" -t {}.{:03d}", video_duration_ms / 1000, video_duration_ms % 1000);
     }
-    cmd << " " << qa(video_output);
-#ifndef _WIN32
-    cmd << " 2>/dev/null";
-#endif
-    return cmd.str();
+    cmd += std::format(" {} {}", qa(video_output), kDevNull);
+    return cmd;
 }
 
 bool FfmpegAssembler::has_audio_stream(const std::filesystem::path& media)
 {
-    std::string cmd =
-    "ffprobe -v error -select_streams a:0 -show_entries stream=index "
-#ifdef _WIN32
-    "-of csv=p=0 " + qa(media) + " 2>NUL";
-#else
-    "-of csv=p=0 " + qa(media) + " 2>/dev/null";
-#endif
+    std::string cmd = std::format(
+        "ffprobe -v error -select_streams a:0 -show_entries stream=index -of csv=p=0 {} {}",
+        qa(media), kDevNull);
 
     std::array<char, 32> buf{};
     FILE* pipe = ::popen(cmd.c_str(), "r");
@@ -224,13 +213,9 @@ bool FfmpegAssembler::has_audio_stream(const std::filesystem::path& media)
 // ---------------------------------------------------------------------------
 int64_t FfmpegAssembler::get_video_duration_ms(const std::filesystem::path& mp4)
 {
-    std::string cmd =
-        "ffprobe -v error -show_entries format=duration "
-#ifdef _WIN32
-        "-of csv=p=0 " + qa(mp4) + " 2>NUL";
-#else
-        "-of csv=p=0 " + qa(mp4) + " 2>/dev/null";
-#endif
+    std::string cmd = std::format(
+        "ffprobe -v error -show_entries format=duration -of csv=p=0 {} {}",
+        qa(mp4), kDevNull);
 
     std::array<char, 64> buf{};
     std::string result;
@@ -285,34 +270,26 @@ AssembleResult FfmpegAssembler::assemble(
     int64_t vid_dur = get_video_duration_ms(video_input);
     if (vid_dur <= 0) vid_dur = video_duration_ms;
 
-    // Build ffmpeg command:
-    //   ffmpeg -y -i clip0.wav -i clip1.wav ... \
-    //     -filter_complex "[0]adelay=T|T[d0];[1]adelay=T|T[d1];...amix=inputs=N:normalize=0" \
-    //     voiceover.wav
-    std::ostringstream cmd;
-    cmd << "ffmpeg -y";
+    std::string inputs;
+    for (const auto& clip : clips) {
+        std::format_to(std::back_inserter(inputs), " -i {}", qa(clip.path));
+    }
 
-    // Inputs
-    for (const auto& clip : clips)
-        cmd << " -i " << qa(clip.path);
-
-    // filter_complex
-    cmd << " -filter_complex \"";
+    std::string filter_complex;
     for (std::size_t i = 0; i < clips.size(); ++i) {
         int64_t delay = timeline.clip_start_ms[i];
-        cmd << "[" << i << "]adelay=" << delay << "|" << delay << "[d" << i << "];";
+        std::format_to(std::back_inserter(filter_complex), "[{}]adelay={}|{}[d{}];", i, delay, delay, i);
     }
-    // amix all labelled streams
-    for (std::size_t i = 0; i < clips.size(); ++i)
-        cmd << "[d" << i << "]";
-    cmd << "amix=inputs=" << clips.size() << ":normalize=0\"";
+    for (std::size_t i = 0; i < clips.size(); ++i) {
+        std::format_to(std::back_inserter(filter_complex), "[d{}]", i);
+    }
+    std::format_to(std::back_inserter(filter_complex), "amix=inputs={}:normalize=0", clips.size());
 
-    cmd << " " << qa(voiceover_out);
-#ifndef _WIN32
-    cmd << " 2>/dev/null";
-#endif
+    std::string cmd = std::format(
+        "ffmpeg -y{} -filter_complex \"{}\" {} {}",
+        inputs, filter_complex, qa(voiceover_out), kDevNull);
 
-    if (!run_asm(cmd.str())) {
+    if (!run_asm(cmd)) {
         res.error = "ffmpeg voiceover mix failed";
         return res;
     }

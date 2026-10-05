@@ -1,8 +1,10 @@
 #pragma once
 
 #include <cstdint>
+#include <expected>
 #include <filesystem>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace srt {
@@ -18,9 +20,7 @@ struct SrtEntry {
 class SrtParser {
 public:
     static std::vector<SrtEntry> parse(const std::filesystem::path& path);
-
-private:
-    static int64_t timestamp_to_ms(const std::string& ts);
+    static std::expected<int64_t, std::string> timestamp_to_ms(std::string_view ts);
 };
 
 } // namespace srt

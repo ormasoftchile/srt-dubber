@@ -1,9 +1,12 @@
 #include "core/recording_flow.hpp"
 #include "core/recording_render_state.hpp"
 
+#include <string_view>
+#include <utility>
+
 namespace core {
 
-std::optional<RecordingCmd> parse_recording_cmd(const std::string& key) {
+std::optional<RecordingCmd> parse_recording_cmd(std::string_view key) {
     if (key == "r") return RecordingCmd::Record;
     if (key == "s") return RecordingCmd::Stop;
     if (key == "p") return RecordingCmd::Play;
@@ -17,6 +20,14 @@ std::optional<RecordingCmd> parse_recording_cmd(const std::string& key) {
 FlowTransition recording_step(FlowState state, RecordingCmd cmd) {
     FlowTransition result{.next = state, .effects = {}};
     auto& effects = result.effects;
+
+    auto abort_in_flight = [&]() {
+        if (state.phase == FlowPhase::Countdown) {
+            effects.push_back(CancelCountdown{});
+        } else if (state.phase == FlowPhase::Recording) {
+            effects.push_back(StopRecording{state.current_idx, {}});
+        }
+    };
 
     switch (cmd) {
         case RecordingCmd::Record:
@@ -43,11 +54,7 @@ FlowTransition recording_step(FlowState state, RecordingCmd cmd) {
             break;
 
         case RecordingCmd::Redo:
-            if (state.phase == FlowPhase::Countdown) {
-                effects.push_back(CancelCountdown{});
-            } else if (state.phase == FlowPhase::Recording) {
-                effects.push_back(StopRecording{state.current_idx, {}});
-            }
+            abort_in_flight();
             result.next.phase = FlowPhase::Idle;
             effects.push_back(StopPlayback{});
             effects.push_back(ClearTake{state.current_idx});
@@ -56,11 +63,7 @@ FlowTransition recording_step(FlowState state, RecordingCmd cmd) {
             break;
 
         case RecordingCmd::Next:
-            if (state.phase == FlowPhase::Countdown) {
-                effects.push_back(CancelCountdown{});
-            } else if (state.phase == FlowPhase::Recording) {
-                effects.push_back(StopRecording{state.current_idx, {}});
-            }
+            abort_in_flight();
             result.next.phase = FlowPhase::Idle;
             effects.push_back(StopPlayback{});
             if (state.current_idx + 1 < state.total) {
@@ -69,11 +72,7 @@ FlowTransition recording_step(FlowState state, RecordingCmd cmd) {
             break;
 
         case RecordingCmd::Back:
-            if (state.phase == FlowPhase::Countdown) {
-                effects.push_back(CancelCountdown{});
-            } else if (state.phase == FlowPhase::Recording) {
-                effects.push_back(StopRecording{state.current_idx, {}});
-            }
+            abort_in_flight();
             result.next.phase = FlowPhase::Idle;
             effects.push_back(StopPlayback{});
             if (state.current_idx > 0) {
@@ -82,11 +81,7 @@ FlowTransition recording_step(FlowState state, RecordingCmd cmd) {
             break;
 
         case RecordingCmd::Quit:
-            if (state.phase == FlowPhase::Countdown) {
-                effects.push_back(CancelCountdown{});
-            } else if (state.phase == FlowPhase::Recording) {
-                effects.push_back(StopRecording{state.current_idx, {}});
-            }
+            abort_in_flight();
             result.next.phase = FlowPhase::Idle;
             effects.push_back(StopPlayback{});
             effects.push_back(ExitToSession{});

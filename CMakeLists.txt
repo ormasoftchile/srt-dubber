@@ -11,7 +11,18 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/.git")
   message(STATUS "Git hooks configured (core.hooksPath = .githooks)")
 endif()
 
-set(CMAKE_CXX_STANDARD 20)
+if(MSVC)
+  set(CMAKE_CXX26_STANDARD_COMPILE_OPTION "/std:c++latest")
+  set(CMAKE_CXX26_EXTENSION_COMPILE_OPTION "/std:c++latest")
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  set(CMAKE_CXX26_STANDARD_COMPILE_OPTION "-std=c++26")
+  set(CMAKE_CXX26_EXTENSION_COMPILE_OPTION "-std=gnu++26")
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  set(CMAKE_CXX26_STANDARD_COMPILE_OPTION "-std=c++26")
+  set(CMAKE_CXX26_EXTENSION_COMPILE_OPTION "-std=gnu++26")
+endif()
+
+set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -112,7 +123,6 @@ target_include_directories(srt_dubber_core PUBLIC
   ${CMAKE_SOURCE_DIR}/vendor
 )
 target_link_libraries(srt_dubber_core PUBLIC nlohmann_json::nlohmann_json)
-target_compile_features(srt_dubber_core PUBLIC cxx_std_20)
 
 add_subdirectory(src)
 

@@ -23,18 +23,6 @@ namespace tui {
 
 // ── Formatting helpers ──────────────────────────────────────────────────────
 
-static std::string fmt_dur_ms(int64_t ms) {
-    char buf[32];
-    std::snprintf(buf, sizeof(buf), "%.1fs", ms / 1000.0);
-    return buf;
-}
-
-static std::string fmt_idx(int one_based, int total) {
-    char buf[32];
-    std::snprintf(buf, sizeof(buf), " %d / %d ", one_based, total);
-    return buf;
-}
-
 static std::string truncate_to(const std::string& s, std::size_t max_len) {
     if (s.size() <= max_len) return s;
     return s.substr(0, max_len - 3) + "...";
@@ -69,9 +57,15 @@ struct RecordingState {
         , countdown_step_ms{step_ms}
     {}
     
-    // non-copyable, non-movable (jthread, atomic)
-    RecordingState(const RecordingState&) = delete;
-    RecordingState& operator=(const RecordingState&) = delete;
+#if defined(__cpp_deleted_function) && __cpp_deleted_function >= 202403L
+#define SRT_DELETE_REASON(msg) = delete(msg)
+#else
+#define SRT_DELETE_REASON(msg) = delete
+#endif
+
+    // non-copyable, non-movable (jthread, atomic) - C++26 delete with reason
+    RecordingState(const RecordingState&) SRT_DELETE_REASON("RecordingState owns active threads and atomics and cannot be copied");
+    RecordingState& operator=(const RecordingState&) SRT_DELETE_REASON("RecordingState owns active threads and atomics and cannot be copied");
 };
 
 // ── Component factory ────────────────────────────────────────────────────────
