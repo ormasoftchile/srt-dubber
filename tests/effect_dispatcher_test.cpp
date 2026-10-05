@@ -5,8 +5,7 @@
 #include "core/recording_effects.hpp"
 #include "core/types.hpp"
 
-#include <cstdio>
-#include <cstdlib>
+#include <print>
 #include <filesystem>
 #include <string>
 
@@ -18,7 +17,7 @@ static int g_tests    = 0;
 #define ASSERT_EQ(a, b) do { \
     ++g_tests; \
     if ((a) != (b)) { \
-        std::fprintf(stderr, "FAIL: %s:%d  %s == %s  (%d != %d)\n", \
+        std::println(stderr, "FAIL: {}:{}  {} == {}  ({} != {})", \
                      __FILE__, __LINE__, #a, #b, (int)(a), (int)(b)); \
         ++g_failures; \
     } \
@@ -27,7 +26,7 @@ static int g_tests    = 0;
 #define ASSERT_TRUE(cond) do { \
     ++g_tests; \
     if (!(cond)) { \
-        std::fprintf(stderr, "FAIL: %s:%d  %s is false\n", __FILE__, __LINE__, #cond); \
+        std::println(stderr, "FAIL: {}:{}  {} is false", __FILE__, __LINE__, #cond); \
         ++g_failures; \
     } \
 } while (false)
@@ -35,13 +34,13 @@ static int g_tests    = 0;
 #define ASSERT_FALSE(cond) do { \
     ++g_tests; \
     if (cond) { \
-        std::fprintf(stderr, "FAIL: %s:%d  %s is true\n", __FILE__, __LINE__, #cond); \
+        std::println(stderr, "FAIL: {}:{}  {} is true", __FILE__, __LINE__, #cond); \
         ++g_failures; \
     } \
 } while (false)
 
 static void run_test(const char* name, void (*fn)()) {
-    std::printf("Running: %s\n", name);
+    std::println("Running: {}", name);
     fn();
 }
 
@@ -213,9 +212,9 @@ int main() {
     run_test("slow recorder start reports pending", test_slow_recorder_start_reports_pending);
 
     if (g_failures == 0) {
-        std::printf("\nAll %d assertions passed.\n", g_tests);
+        std::println("\nAll {} assertions passed.", g_tests);
         return 0;
     }
-    std::fprintf(stderr, "\n%d / %d assertions FAILED.\n", g_failures, g_tests);
+    std::println(stderr, "\n{} / {} assertions FAILED.", g_failures, g_tests);
     return 1;
 }

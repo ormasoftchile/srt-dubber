@@ -1,6 +1,5 @@
 #include "core/app_session.hpp"
-#include <cstdio>
-#include <cstdlib>
+#include <print>
 
 // Minimal test framework
 static int g_failures = 0;
@@ -8,7 +7,7 @@ static int g_tests    = 0;
 
 #define ASSERT_EQ(a, b) do { \
     if ((a) != (b)) { \
-        std::fprintf(stderr, "FAIL: %s:%d: %s == %s (%d != %d)\n", \
+        std::println(stderr, "FAIL: {}:{}: {} == {} ({} != {})", \
             __FILE__, __LINE__, #a, #b, (int)(a), (int)(b)); \
         ++g_failures; \
     } \
@@ -16,21 +15,21 @@ static int g_tests    = 0;
 
 #define ASSERT_TRUE(cond) do { \
     if (!(cond)) { \
-        std::fprintf(stderr, "FAIL: %s:%d: %s is false\n", __FILE__, __LINE__, #cond); \
+        std::println(stderr, "FAIL: {}:{}: {} is false", __FILE__, __LINE__, #cond); \
         ++g_failures; \
     } \
 } while (false)
 
 #define ASSERT_FALSE(cond) do { \
     if (cond) { \
-        std::fprintf(stderr, "FAIL: %s:%d: %s is true\n", __FILE__, __LINE__, #cond); \
+        std::println(stderr, "FAIL: {}:{}: {} is true", __FILE__, __LINE__, #cond); \
         ++g_failures; \
     } \
 } while (false)
 
 static void run_test(const char* name, void (*fn)()) {
     ++g_tests;
-    std::printf("Running: %s\n", name);
+    std::println("Running: {}", name);
     fn();
 }
 
@@ -126,6 +125,6 @@ int main() {
     run_test("AssembleDone → Session",                       test_assemble_done_returns_to_session);
     run_test("review_idx preserved across GoReview",         test_review_idx_preserved_across_transitions);
 
-    std::printf("\n%d/%d tests passed\n", g_tests - g_failures, g_tests);
+    std::println("\n{}/{} tests passed", g_tests - g_failures, g_tests);
     return g_failures == 0 ? 0 : 1;
 }

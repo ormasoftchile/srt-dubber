@@ -7,10 +7,10 @@
 #include "ftxui/component/event.hpp"
 #include "ftxui/component/screen_interactive.hpp"
 #include "ftxui/dom/elements.hpp"
-
-#include <cstdio>
+#include <format>
 #include <memory>
 #include <string>
+#include <utility>
 
 using namespace ftxui;
 
@@ -18,9 +18,7 @@ namespace tui {
 
 static std::string fmt_dur_ms(int64_t ms) {
     if (ms <= 0) return "  \xe2\x80\x94  ";
-    char buf[32];
-    std::snprintf(buf, sizeof(buf), "%.1fs", ms / 1000.0);
-    return buf;
+    return std::format("{:.1f}s", ms / 1000.0);
 }
 
 static Element status_cell(const std::string& label, core::TakeStatus s) {
@@ -30,7 +28,7 @@ static Element status_cell(const std::string& label, core::TakeStatus s) {
         case core::TakeStatus::stretched: return color(Color::Yellow, text(label));
         case core::TakeStatus::overflow:  return color(Color::Red,    text(label));
     }
-    return text(label);
+    std::unreachable();
 }
 
 // ── Review state (shared_ptr across lambdas) ─────────────────────────────────

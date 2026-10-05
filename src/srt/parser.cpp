@@ -1,117 +1,127 @@
 #include "srt/parser.hpp"
 
+#include <charconv>
+#include <cctype>
+#include <format>
 #include <fstream>
-#include <sstream>
 #include <stdexcept>
 #include <string>
-#include <algorithm>
+#include <string_view>
+#include <utility>
 
 namespace srt {
 
 namespace {
 
-// Trim leading/trailing whitespace (including \r)
-std::string trim(std::string s) {
-    auto not_space = [](unsigned char c) { return !std::isspace(c); };
-    s.erase(s.begin(), std::find_if(s.begin(), s.end(), not_space));
-    s.erase(std::find_if(s.rbegin(), s.rend(), not_space).base(), s.end());
+// Zero-copy trim leading/trailing whitespace (including \r)
+constexpr std::string_view trim(std::string_view s) {
+    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) {
+        s.remove_prefix(1);
+    }
+    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) {
+        s.remove_suffix(1);
+    }
     return s;
 }
 
-bool is_blank(const std::string& line) {
+constexpr bool is_blank(std::string_view line) {
     return trim(line).empty();
 }
 
 } // anonymous namespace
 
-// Parse "HH:MM:SS,mmm" → milliseconds
-int64_t SrtParser::timestamp_to_ms(const std::string& ts) {
-    // Expected format: HH:MM:SS,mmm
+// Parse "HH:MM:SS,mmm" or "HH:MM:SS.mmm" → milliseconds
+std::expected<int64_t, std::string> SrtParser::timestamp_to_ms(std::string_view ts) {
     if (ts.size() < 12) {
-        throw std::runtime_error("Invalid SRT timestamp: " + ts);
+        return std::unexpected(std::format("Invalid SRT timestamp length: {}", ts));
     }
 
-    auto safe_int = [&](const std::string& s) -> int64_t {
-        try {
-            return std::stoll(s);
-        } catch (...) {
-            throw std::runtime_error("Invalid SRT timestamp component in: " + ts);
+    auto parse_component = [&](std::string_view part) -> std::expected<int64_t, std::string> {
+        int64_t val = 0;
+        auto [ptr, ec] = std::from_chars(part.data(), part.data() + part.size(), val);
+        if (ec != std::errc{} || ptr != part.data() + part.size()) {
+            return std::unexpected(std::format("Invalid SRT timestamp component: {}", part));
         }
+        return val;
     };
 
-    int64_t hours   = safe_int(ts.substr(0, 2));
-    int64_t minutes = safe_int(ts.substr(3, 2));
-    int64_t seconds = safe_int(ts.substr(6, 2));
-    int64_t millis  = safe_int(ts.substr(9, 3));
+    auto hours   = parse_component(ts.substr(0, 2));
+    auto minutes = parse_component(ts.substr(3, 2));
+    auto seconds = parse_component(ts.substr(6, 2));
+    auto millis  = parse_component(ts.substr(9, 3));
 
-    return (hours * 3600 + minutes * 60 + seconds) * 1000 + millis;
+    if (!hours || !minutes || !seconds || !millis) {
+        return std::unexpected(std::format("Invalid SRT timestamp components in: {}", ts));
+    }
+
+    return (*hours * 3600 + *minutes * 60 + *seconds) * 1000 + *millis;
 }
 
 std::vector<SrtEntry> SrtParser::parse(const std::filesystem::path& path) {
     std::ifstream file(path);
     if (!file.is_open()) {
-        throw std::runtime_error("Cannot open SRT file: " + path.string());
+        throw std::runtime_error(std::format("Cannot open SRT file: {}", path.string()));
     }
 
     std::vector<SrtEntry> entries;
     std::string line;
 
-    // State machine: each block is  [index] [timecode] [text lines...] [blank]
+    // State machine: each block is [index] [timecode] [text lines...] [blank]
     while (std::getline(file, line)) {
-        line = trim(line);
+        auto trimmed = trim(line);
 
         // Skip leading blank lines between entries
-        if (is_blank(line)) {
+        if (trimmed.empty()) {
             continue;
         }
 
         // 1. Parse index line
         int index = 0;
-        try {
-            index = std::stoi(line);
-        } catch (...) {
+        auto [ptr, ec] = std::from_chars(trimmed.data(), trimmed.data() + trimmed.size(), index);
+        if (ec != std::errc{} || ptr != trimmed.data() + trimmed.size()) {
             // Not a valid index — skip until next blank line
-            while (std::getline(file, line) && !is_blank(trim(line))) {}
+            while (std::getline(file, line) && !is_blank(line)) {}
             continue;
         }
 
         // 2. Parse timecode line
         if (!std::getline(file, line)) break;
-        line = trim(line);
+        trimmed = trim(line);
 
         // Find " --> " separator
-        const std::string sep = " --> ";
-        auto sep_pos = line.find(sep);
-        if (sep_pos == std::string::npos) {
+        constexpr std::string_view sep = " --> ";
+        auto sep_pos = trimmed.find(sep);
+        if (sep_pos == std::string_view::npos) {
             // Malformed — skip block
-            while (std::getline(file, line) && !is_blank(trim(line))) {}
+            while (std::getline(file, line) && !is_blank(line)) {}
             continue;
         }
 
-        int64_t start_ms = 0, end_ms = 0;
-        try {
-            start_ms = timestamp_to_ms(line.substr(0, sep_pos));
-            // Timecode line may have extra metadata after end timestamp; take only first token
-            std::string end_part = line.substr(sep_pos + sep.size());
-            // Strip any trailing metadata (e.g. positioning tags)
-            auto space_pos = end_part.find(' ');
-            if (space_pos != std::string::npos) {
-                end_part = end_part.substr(0, space_pos);
-            }
-            end_ms = timestamp_to_ms(end_part);
-        } catch (const std::exception& e) {
+        auto start_res = timestamp_to_ms(trimmed.substr(0, sep_pos));
+        std::string_view end_part = trimmed.substr(sep_pos + sep.size());
+        // Strip any trailing metadata (e.g. positioning tags)
+        auto space_pos = end_part.find(' ');
+        if (space_pos != std::string_view::npos) {
+            end_part = end_part.substr(0, space_pos);
+        }
+        auto end_res = timestamp_to_ms(end_part);
+
+        if (!start_res || !end_res) {
             // Malformed timecode — skip block
-            while (std::getline(file, line) && !is_blank(trim(line))) {}
+            while (std::getline(file, line) && !is_blank(line)) {}
             continue;
         }
+
+        int64_t start_ms = *start_res;
+        int64_t end_ms = *end_res;
 
         // 3. Parse text lines until blank line or EOF
         std::string text;
         while (std::getline(file, line)) {
-            line = trim(line);
-            if (is_blank(line)) break;
+            auto text_line = trim(line);
+            if (text_line.empty()) break;
             if (!text.empty()) text += '\n';
-            text += line;
+            text.append(text_line);
         }
 
         entries.push_back(SrtEntry{

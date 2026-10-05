@@ -8,14 +8,17 @@
 using json = nlohmann::json;
 using namespace core;
 
+#include <string_view>
+#include <utility>
+
 // Convert FlowPhase to string
-static std::string phase_to_string(FlowPhase p) {
+constexpr std::string_view phase_to_string(FlowPhase p) {
     switch (p) {
         case FlowPhase::Idle: return "idle";
         case FlowPhase::Countdown: return "countdown";
         case FlowPhase::Recording: return "recording";
     }
-    return "unknown";
+    std::unreachable();
 }
 
 // Fake entry data for standalone harness

@@ -1,6 +1,7 @@
 #include "core/assemble_flow.hpp"
-#include <cstdio>
-#include <cstdlib>
+#include <algorithm>
+#include <print>
+#include <ranges>
 #include <string>
 
 // ─── Minimal test framework ─────────────────────────────────────────────────
@@ -10,42 +11,42 @@ static int g_tests    = 0;
 
 #define ASSERT_EQ(a, b) do { \
     if ((a) != (b)) { \
-        std::fprintf(stderr, "FAIL: %s:%d: %s == %s (%d != %d)\n", __FILE__, __LINE__, #a, #b, (int)(a), (int)(b)); \
+        std::println(stderr, "FAIL: {}:{}: {} == {} ({} != {})", __FILE__, __LINE__, #a, #b, (int)(a), (int)(b)); \
         ++g_failures; \
     } \
 } while (false)
 
 #define ASSERT_TRUE(cond) do { \
     if (!(cond)) { \
-        std::fprintf(stderr, "FAIL: %s:%d: %s is false\n", __FILE__, __LINE__, #cond); \
+        std::println(stderr, "FAIL: {}:{}: {} is false", __FILE__, __LINE__, #cond); \
         ++g_failures; \
     } \
 } while (false)
 
 #define ASSERT_FALSE(cond) do { \
     if (cond) { \
-        std::fprintf(stderr, "FAIL: %s:%d: %s is true\n", __FILE__, __LINE__, #cond); \
+        std::println(stderr, "FAIL: {}:{}: {} is true", __FILE__, __LINE__, #cond); \
         ++g_failures; \
     } \
 } while (false)
 
 #define ASSERT_STR_EQ(a, b) do { \
     if ((a) != (b)) { \
-        std::fprintf(stderr, "FAIL: %s:%d: \"%s\" != \"%s\"\n", __FILE__, __LINE__, (a).c_str(), (b).c_str()); \
+        std::println(stderr, "FAIL: {}:{}: \"{}\" != \"{}\"", __FILE__, __LINE__, (a), (b)); \
         ++g_failures; \
     } \
 } while (false)
 
 #define ASSERT_STR_CONTAINS(haystack, needle) do { \
-    if ((haystack).find(needle) == std::string::npos) { \
-        std::fprintf(stderr, "FAIL: %s:%d: \"%s\" not found in \"%s\"\n", __FILE__, __LINE__, needle, (haystack).c_str()); \
+    if (!(haystack).contains(needle)) { \
+        std::println(stderr, "FAIL: {}:{}: \"{}\" not found in \"{}\"", __FILE__, __LINE__, needle, (haystack)); \
         ++g_failures; \
     } \
 } while (false)
 
 static void run_test(const char* name, void (*fn)()) {
     ++g_tests;
-    std::printf("Running: %s\n", name);
+    std::println("Running: {}", name);
     fn();
 }
 
@@ -53,10 +54,7 @@ static void run_test(const char* name, void (*fn)()) {
 
 template <typename T>
 static bool has_effect(const std::vector<core::AssembleEffect>& effects) {
-    for (const auto& e : effects) {
-        if (std::holds_alternative<T>(e)) return true;
-    }
-    return false;
+    return std::ranges::any_of(effects, [](const auto& e) { return std::holds_alternative<T>(e); });
 }
 
 using namespace core;
@@ -170,6 +168,6 @@ int main() {
     run_test("back_from_complete",          test_back_from_complete);
     run_test("render_state_complete",       test_render_state_complete);
 
-    std::printf("\n%d/%d tests passed.\n", g_tests - g_failures, g_tests);
-    return g_failures ? EXIT_FAILURE : EXIT_SUCCESS;
+    std::println("\n{}/{} tests passed.", g_tests - g_failures, g_tests);
+    return g_failures ? 1 : 0;
 }

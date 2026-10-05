@@ -34,9 +34,9 @@ struct AssembleStateWrapper {
     
     AssembleStateWrapper() = default;
     
-    // non-copyable, non-movable (mutex, jthread)
-    AssembleStateWrapper(const AssembleStateWrapper&) = delete;
-    AssembleStateWrapper& operator=(const AssembleStateWrapper&) = delete;
+    // non-copyable, non-movable (mutex, jthread) - C++26 delete with reason
+    AssembleStateWrapper(const AssembleStateWrapper&) = delete("AssembleStateWrapper owns worker threads and mutexes and cannot be copied");
+    AssembleStateWrapper& operator=(const AssembleStateWrapper&) = delete("AssembleStateWrapper owns worker threads and mutexes and cannot be copied");
 };
 
 // ── Component factory ────────────────────────────────────────────────────────

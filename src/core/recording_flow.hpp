@@ -2,7 +2,7 @@
 #include "recording_effects.hpp"
 #include "recording_render_state.hpp"
 #include <optional>
-#include <string>
+#include <string_view>
 
 namespace core {
 
@@ -21,7 +21,7 @@ enum class RecordingCmd {
 };
 
 /// Parse a single-character key string to a command. Returns nullopt if unrecognised.
-std::optional<RecordingCmd> parse_recording_cmd(const std::string& key);
+std::optional<RecordingCmd> parse_recording_cmd(std::string_view key);
 
 /// Logical phase of the recording flow.
 enum class FlowPhase { Idle, Countdown, Recording };

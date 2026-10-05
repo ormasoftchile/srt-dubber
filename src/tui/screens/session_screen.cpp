@@ -5,6 +5,7 @@
 #include "ftxui/component/screen_interactive.hpp"
 #include "ftxui/dom/elements.hpp"
 
+#include <format>
 #include <string>
 
 using namespace ftxui;
@@ -30,7 +31,7 @@ Component make_session_component(core::Project& project, NavigateFunc navigate) 
         auto stat = [](const char* label, int value) -> Element {
             return hbox({
                 dim(text(label)),
-                text(std::to_string(value)),
+                text(std::format("{}", value)),
             });
         };
 
@@ -41,7 +42,7 @@ Component make_session_component(core::Project& project, NavigateFunc navigate) 
                 text("  "),
                 text(project.display_name()),
                 dim(text("   \xc2\xb7  ")),
-                dim(text(std::to_string(total) + " entries")),
+                dim(text(std::format("{} entries", total))),
                 filler(),
               });
 

@@ -2,10 +2,12 @@
 
 #include <cassert>
 #include <charconv>
+#include <format>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 
 #include "srt/parser.hpp"
 
@@ -18,7 +20,7 @@ namespace core {
 namespace json_util {
 
 /// Escape a string value for JSON output.
-static std::string escape(const std::string& s) {
+static std::string escape(std::string_view s) {
     std::string out;
     out.reserve(s.size() + 4);
     for (unsigned char c : s) {
@@ -30,9 +32,7 @@ static std::string escape(const std::string& s) {
             case '\t': out += "\\t";  break;
             default:
                 if (c < 0x20) {
-                    char buf[8];
-                    std::snprintf(buf, sizeof(buf), "\\u%04x", c);
-                    out += buf;
+                    std::format_to(std::back_inserter(out), "\\u{:04x}", c);
                 } else {
                     out += static_cast<char>(c);
                 }
@@ -281,26 +281,37 @@ Project Project::load_or_create(const std::filesystem::path& srt_path) {
 void Project::save() const {
     std::ofstream f(project_file_);
     if (!f.is_open()) {
-        throw std::runtime_error("Cannot write project file: " + project_file_.string());
+        throw std::runtime_error(std::format("Cannot write project file: {}", project_file_.string()));
     }
 
     f << "[\n";
     for (std::size_t i = 0; i < entries_.size(); ++i) {
         const auto& e = entries_[i];
-        f << "  {\n";
-        f << "    \"index\": "                 << e.index                              << ",\n";
-        f << "    \"start_ms\": "              << e.start_ms                           << ",\n";
-        f << "    \"end_ms\": "                << e.end_ms                             << ",\n";
-        f << "    \"slot_duration_ms\": "      << e.slot_duration_ms                   << ",\n";
-        f << "    \"text\": \""               << json_util::escape(e.text)             << "\",\n";
-        f << "    \"raw_take_path\": \""      << json_util::escape(e.raw_take_path)    << "\",\n";
-        f << "    \"processed_take_path\": \"" << json_util::escape(e.processed_take_path) << "\",\n";
-        f << "    \"raw_duration_ms\": "       << e.raw_duration_ms                    << ",\n";
-        f << "    \"processed_duration_ms\": " << e.processed_duration_ms              << ",\n";
-        f << "    \"status\": \""              << take_status_to_string(e.status)      << "\"\n";
-        f << "  }";
-        if (i + 1 < entries_.size()) f << ",";
-        f << "\n";
+        f << std::format(
+            "  {{\n"
+            "    \"index\": {},\n"
+            "    \"start_ms\": {},\n"
+            "    \"end_ms\": {},\n"
+            "    \"slot_duration_ms\": {},\n"
+            "    \"text\": \"{}\",\n"
+            "    \"raw_take_path\": \"{}\",\n"
+            "    \"processed_take_path\": \"{}\",\n"
+            "    \"raw_duration_ms\": {},\n"
+            "    \"processed_duration_ms\": {},\n"
+            "    \"status\": \"{}\"\n"
+            "  }}{}\n",
+            e.index,
+            e.start_ms,
+            e.end_ms,
+            e.slot_duration_ms,
+            json_util::escape(e.text),
+            json_util::escape(e.raw_take_path),
+            json_util::escape(e.processed_take_path),
+            e.raw_duration_ms,
+            e.processed_duration_ms,
+            take_status_to_string(e.status),
+            (i + 1 < entries_.size()) ? "," : ""
+        );
     }
     f << "]\n";
 }
@@ -331,10 +342,10 @@ std::filesystem::path Project::dubbed_video_path() const {
 
 std::string Project::display_name() const {
     std::string stem = project_file_.stem().string();  // e.g. "episode01-project"
-    const std::string suffix = "-project";
-    if (stem.size() > suffix.size() &&
-        stem.compare(stem.size() - suffix.size(), suffix.size(), suffix) == 0)
+    constexpr std::string_view suffix = "-project";
+    if (stem.ends_with(suffix)) {
         stem.erase(stem.size() - suffix.size());
+    }
     return stem;
 }
 
